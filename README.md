@@ -1,5 +1,7 @@
 # 海浪 · astrbot_plugin_wave
 
+<img src="logo.png" width="160" align="right" alt="wave logo">
+
 - **必须配 embedding 模型**，否则没有语义边与向量近邻，只剩标签联想
 
 - 希望这个插件成为一个公众项目，让百家争鸣成为集百家之长，打造真正的既省Token又可以帮助ai去更好的，更长久的去记住“你”与ta的一切。
