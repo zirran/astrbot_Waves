@@ -1,5 +1,7 @@
 # 海浪 · astrbot_plugin_wave
 
+<img src="logo.png" width="160" align="right" alt="wave logo">
+
 给 AstrBot 的**记忆 + 日记 + 情感 + 星图**一体化插件。
 
 四层记忆、150 词标签体系、情感加权、标签联想与两跳推理、真实遗忘、带大纲的日记与年度合集、以及一个可交互的 3D 记忆星图。
