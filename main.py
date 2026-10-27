@@ -967,7 +967,7 @@ class MemoryLayersPlugin(Star):
     async def enrich_recent(self, added: list[dict]) -> None:
         """L1：每条对话都用便宜模型总结 + 打 5 个标签，值得记的自动记住。"""
         try:
-            batch = [m for m in added if (m.get("text") or "").strip()][:10]
+            batch = [m for m in added if (m.get("text") or "").strip()][:15]
             if not batch:
                 return
             texts = ["".join(ch for ch in str(m.get("text") or "") if not ch.isspace()) for m in batch]
@@ -2217,6 +2217,16 @@ class MemoryLayersPlugin(Star):
                 _cap = self._int("recall_inject_max", 5, 2)
                 if len(lines) > 1 and float(hits[0].get("score") or 0) >= 3.0:
                     _cap = min(_cap, 3)
+                _budget = int(self.cfg("recall_inject_chars", 300) or 300)
+                _picked_lines, _used = [], 0
+                for _ln in lines:
+                    if _used + len(_ln) > _budget and _picked_lines:
+                        break
+                    _picked_lines.append(_ln)
+                    _used += len(_ln)
+                    if len(_picked_lines) >= _cap:
+                        break
+                lines = _picked_lines
                 block = ("\n\n【联想记忆｜只在和这句话直接相关时用，最多引用一条；不相关就完全忽略，不要为了用记忆而换话题】\n"
                          + "\n".join(lines[:_cap]) + "\n")
                 mood = self._mood_trend()
@@ -2567,7 +2577,11 @@ class MemoryLayersPlugin(Star):
             except Exception:
                 pass
         last = datetime.fromtimestamp(self.last_diary).strftime("%m-%d %H:%M") if self.last_diary else "还没写过"
+        _floor = self.state.get("score_floor") or self.cfg("recall_score_floor", 1.2)
+        _topics = self.state.get("topic_sim") or {}
+        _bk = "有" if (self.data_dir.parent / ".backups" / "wave").exists() else "无"
         yield event.plain_result(
+            f"门槛 {_floor} · 话题阈值 {len(_topics)} 个 · 备份 {_bk}\n"
             f"L1 最近 {self._int('l1_window', 10)} 句 · L2 {len(alive)} 条 · "
             f"L3 {len(active)} 条（下沉 {len(parked)}）\n"
             f"L4 {total} 句 / {len(files)} 天 · 日记 {len(self.diary_entries)} 篇（上篇 {last}）\n"
