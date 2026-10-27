@@ -21,6 +21,7 @@ from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star, StarTools
+from astrbot.core.agent.message import TextPart
 
 DAY = 86400
 PROMPT_TAGS = ["主人", "家人", "朋友", "自己", "恋人", "工作", "上班", "加班", "面试", "学习", "考试", "论文", "毕业", "编程", "代码", "调试", "报错", "部署", "模型", "电脑", "手机", "游戏", "动漫", "抽卡", "番剧", "音乐", "歌", "电影", "视频", "小说", "吃饭", "午饭", "晚饭", "夜宵", "零食", "咖啡", "奶茶", "做饭", "外卖", "睡觉", "熬夜", "失眠", "生病", "感冒", "医院", "吃药", "运动", "跑步", "累", "钱", "工资", "花钱", "购物", "快递", "房租", "旅行", "打车", "天气", "开心", "难过", "委屈", "生气", "焦虑", "孤独"]
@@ -836,7 +837,7 @@ class MemoryLayersPlugin(Star):
         """把记忆数据每天复制一份，保留最近 7 天。"""
         try:
             today = time.strftime("%Y%m%d")
-            root = self.data_dir.parent / ".backups" / "wave" / today
+            root = self.data_dir / "backups" / today
             if root.exists():
                 return
             root.mkdir(parents=True, exist_ok=True)
@@ -849,7 +850,7 @@ class MemoryLayersPlugin(Star):
             arc = self.data_dir / "archive"
             if arc.exists():
                 shutil.copytree(arc, root / "archive", dirs_exist_ok=True)
-            base = self.data_dir.parent / ".backups" / "wave"
+            base = self.data_dir / "backups"
             olds = sorted([p for p in base.iterdir() if p.is_dir()], reverse=True)
             for old in olds[keep_days:]:
                 shutil.rmtree(old, ignore_errors=True)
@@ -2248,7 +2249,15 @@ class MemoryLayersPlugin(Star):
                 guess = self.inference(hits)
                 if guess:
                     block += f"【推断】{guess}\n"
-            req.system_prompt = (req.system_prompt or "") + block
+            try:
+                part = TextPart(text=block).mark_as_temp()
+                parts = getattr(req, "extra_user_content_parts", None)
+                if not isinstance(parts, list):
+                    parts = []
+                    req.extra_user_content_parts = parts
+                parts.append(part)
+            except Exception as _exc:
+                logger.debug(f"[记忆] 临时内容注入失败: {_exc}")
             preview = " | ".join(l.strip() for l in block.strip().splitlines()[1:4])
             logger.debug(f"[记忆] 联想注入 {len(hits) or 4} 条（{len(block)} 字）：{preview[:110]}")
         except Exception as exc:
@@ -2416,6 +2425,16 @@ class MemoryLayersPlugin(Star):
 
                 def do_GET(self):
                     if self.path.startswith("/api/cloud"):
+                        token = str(plugin.cfg("web_token", "") or plugin.state.get("web_token") or "").strip()
+                        if token:
+                            from urllib.parse import urlparse, parse_qs
+                            qs = parse_qs(urlparse(self.path).query)
+                            got = (qs.get("token") or [""])[0] or self.headers.get("X-Wave-Token", "")
+                            if got != token:
+                                self.send_response(401)
+                                self.end_headers()
+                                self.wfile.write(b'{"error":"unauthorized"}')
+                                return
                         body = json.dumps({"memory": plugin._web_payload()}, ensure_ascii=False).encode("utf-8")
                         self.send_response(200)
                         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -2428,9 +2447,21 @@ class MemoryLayersPlugin(Star):
                     return super().do_GET()
 
             port = self._int("web_port", 8788, 1024)
-            server = http.server.ThreadingHTTPServer(("0.0.0.0", port), Handler)
+            host = str(self.cfg("web_host", "0.0.0.0") or "0.0.0.0")
+            server = http.server.ThreadingHTTPServer((host, port), Handler)
             threading.Thread(target=server.serve_forever, daemon=True).start()
-            logger.info(f"[海浪] 记忆星图已启动：http://<host>:{port}/")
+            token = str(self.cfg("web_token", "") or "").strip()
+            if not token:
+                token = str(self.state.get("web_token") or "")
+                if not token:
+                    try:
+                        import secrets as _secrets
+                        token = _secrets.token_urlsafe(9)
+                    except Exception:
+                        token = str(int(time.time()))[-8:]
+                    self.state["web_token"] = token
+                    self._save_state()
+            logger.info(f"[海浪] 记忆星图已启动：http://<host>:{port}/?token={token}")
         except Exception as exc:
             logger.warning(f"[海浪] 星图页面启动失败: {exc}")
 
@@ -2579,7 +2610,7 @@ class MemoryLayersPlugin(Star):
         last = datetime.fromtimestamp(self.last_diary).strftime("%m-%d %H:%M") if self.last_diary else "还没写过"
         _floor = self.state.get("score_floor") or self.cfg("recall_score_floor", 1.2)
         _topics = self.state.get("topic_sim") or {}
-        _bk = "有" if (self.data_dir.parent / ".backups" / "wave").exists() else "无"
+        _bk = "有" if (self.data_dir / "backups").exists() else "无"
         yield event.plain_result(
             f"门槛 {_floor} · 话题阈值 {len(_topics)} 个 · 备份 {_bk}\n"
             f"L1 最近 {self._int('l1_window', 10)} 句 · L2 {len(alive)} 条 · "

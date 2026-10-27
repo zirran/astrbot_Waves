@@ -583,7 +583,7 @@
   window.__dbg = { nodes: function () { return nodes; }, state: function () { return { zoom: zoom, fit: fitScale }; }, setZoom: function (z) { zoom = z; } };
 
   function refresh() {
-    fetch('/api/cloud', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
+    fetch('/api/cloud'+location.search, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
       build(d.memory || {});
     }).catch(function (e) { showErr('加载记忆失败：' + e); });
   }

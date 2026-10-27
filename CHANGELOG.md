@@ -1,5 +1,20 @@
 # 更新日志
 
+## v1.1.1
+
+按插件市场审核意见整改。
+
+### 修复（审核整改）
+
+- **上下文注入不再改写 `system_prompt`**：改为 `req.extra_user_content_parts` + `TextPart(...).mark_as_temp()`，
+  临时记忆块只对本轮生效、不进历史，也不再破坏 Provider 的 prompt cache
+- **备份路径收回插件目录内**：`plugin_data/astrbot_plugin_waves/backups/YYYYMMDD/`（原来写在 data_dir.parent 下）
+- **星图接口加访问令牌**：`/api/cloud` 与 `/` 需要 `?token=`，令牌首次启动自动生成并存入 `state.json`，日志会打印完整访问地址
+- 星图页面自动把 URL 里的 token 带给接口，打开即用
+
+---
+
+
 ## v1.1.0
 
 这一版重做了「联想」和「记忆调用」两块，同时把 Token 花销压到更低。
