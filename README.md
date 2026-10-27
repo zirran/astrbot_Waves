@@ -210,6 +210,7 @@ http://<服务器IP>:8788/
 | 全局门槛自适应 | 每 20 次检索 | 命中率低 → 降门槛；总是命中 → 升门槛 |
 | 话题门槛自适应 | 每 8 次检索（按话题） | 每个话题独立的向量相似度阈值（0.45–0.70） |
 | 日记合并 | 超 24 篇 | 合成年度合集 |
+| 每日备份 | 每天 | 复制记忆到 .backups/wave/日期，保留 7 天 |
 
 ---
 
@@ -313,6 +314,7 @@ git clone https://github.com/zirran/astrbot_Waves.git
 ```
 archive/             L4 每日原话（jsonl）
 archive_index.json   L4 每日索引（标签 + 代表句）
+facts_archive.json   下沉归档（权重 <1.0 的事实）
 l1_meta.json         L1 摘要与标签
 l2_notes.json        L2 摘要
 l3_facts.json        L3 长期事实

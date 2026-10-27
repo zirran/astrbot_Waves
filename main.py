@@ -2435,6 +2435,13 @@ class MemoryLayersPlugin(Star):
                 except Exception as exc:
                     logger.warning(f"[Wave] startup digest failed: {exc}")
             asyncio.create_task(_startup_digest())
+        try:
+            if time.time() - float(self.state.get("last_backup") or 0) > 20 * 3600:
+                self._daily_backup()
+                self.state["last_backup"] = time.time()
+                self._save_state()
+        except Exception:
+            pass
         self._start_web()
         try:
             await asyncio.to_thread(self.build_graph)
