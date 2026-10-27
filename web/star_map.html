@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>记忆星图 · QQ BOT</title>
+<link rel="stylesheet" href="/theme/endfield.css">
+<style>
+  :root{--paper:#f4f4f2;--ink:#161616;--gray:#5c5c5c;--line:#d9d9d4;--accent:#FFFA00}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--paper);color:var(--ink);overflow:hidden;font-family:"Saira","Microsoft YaHei",system-ui,sans-serif;display:flex;flex-direction:column}
+  header{display:flex;align-items:flex-end;gap:14px;padding:12px 20px 9px;border-bottom:1px solid var(--line);flex:0 0 auto}
+  .eyebrow{font-weight:700;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--gray)}
+  header h1{margin:2px 0 0;font-size:22px;font-weight:900}
+  header a.back{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);text-decoration:none;border:1px solid var(--ink);padding:6px 10px;align-self:center}
+  header a.back:hover{background:var(--ink);color:var(--paper)}
+  header .stats{margin-left:auto;display:flex;gap:16px}
+  header .stat b{display:block;font-size:15px;font-weight:900}
+  header .stat span{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--gray)}
+  main{flex:1;display:flex;min-height:0}
+  #stage{position:relative;flex:1;min-width:0;min-height:0}
+  canvas#sky{position:absolute;left:0;top:0;right:0;bottom:150px;width:100%;height:calc(100% - 150px);display:block;touch-action:none;user-select:none;cursor:grab}
+  canvas#sky.dragging{cursor:grabbing}
+  #timebar{position:absolute;left:16px;top:12px;display:flex;gap:6px;z-index:6}
+  #timebar button{font:700 11px/1 Saira,sans-serif;letter-spacing:.08em;padding:6px 10px;border:1px solid var(--ink);background:var(--paper);color:var(--ink);cursor:pointer;text-transform:uppercase}
+  #timebar button.on{background:var(--ink);color:var(--accent)}
+  #legend{position:absolute;left:16px;bottom:158px;display:flex;gap:14px;font-size:11px;color:var(--gray);pointer-events:none}
+  #legend i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  #hud{position:absolute;right:14px;bottom:158px;font:11px/1.5 ui-monospace,Consolas,monospace;color:var(--gray);pointer-events:none;text-align:right;white-space:pre}
+  #err{position:absolute;left:14px;top:46px;right:14px;background:#fff2f2;border:1px solid #c00;color:#900;font:12px/1.5 ui-monospace,monospace;padding:8px;display:none;white-space:pre-wrap;z-index:9}
+  #zoomBar{position:absolute;right:14px;top:12px;display:flex;flex-direction:column;gap:6px;z-index:6}
+  #zoomBar button{width:30px;height:30px;border:1px solid var(--ink);background:var(--paper);color:var(--ink);font:700 15px/1 ui-monospace,monospace;cursor:pointer;padding:0}
+  #zoomBar button:hover{background:var(--ink);color:var(--accent)}
+  #treeBox{position:absolute;left:0;right:0;bottom:0;height:150px;border-top:1px solid var(--line);background:rgba(244,244,242,.96);padding:4px 12px 0}
+  #treeCv{width:100%;height:120px;display:block;cursor:pointer}
+  #treeTip{font-size:10px;letter-spacing:.05em;color:var(--gray);height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  aside{width:326px;flex:0 0 326px;border-left:1px solid var(--line);background:#fafaf8;display:flex;flex-direction:column;min-height:0}
+  aside .head{padding:12px 15px 8px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:8px}
+  aside .head .eyebrow{font-size:10px}
+  aside .head b{font-size:13px}
+  #detail{padding:13px 15px;overflow-y:auto;flex:1}
+  #detail .empty{color:var(--gray);font-size:13px;line-height:1.9}
+  #detail h2{font-size:15px;font-weight:900;line-height:1.6;margin:0 0 10px;border-left:3px solid var(--accent);padding-left:9px}
+  .chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px}
+  .chip{font-size:11px;padding:3px 8px;border:1px solid var(--ink);border-radius:999px}
+  .chip.accent{background:var(--accent)}
+  dl{margin:0;display:grid;grid-template-columns:72px 1fr;gap:6px 8px;font-size:12px}
+  dt{color:var(--gray);letter-spacing:.06em;font-size:10px;text-transform:uppercase;padding-top:2px}
+  dd{margin:0;line-height:1.6}
+  .agebar{height:3px;background:#e6e6e0;margin:8px 0 10px;grid-column:1/-1}
+  .agebar i{display:block;height:3px;background:var(--ink)}
+  .links{margin-top:13px}
+  .links h3{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);margin:0 0 6px}
+  .links ul{margin:0;padding:0}
+  .links li{list-style:none;font-size:12px;line-height:1.5;padding:6px 0;border-top:1px solid var(--line);cursor:pointer}
+  .links li:hover{background:#f0f0ea}
+</style>
+</head>
+<body>
+<header>
+  <div><div class="eyebrow">Memory Constellation</div><h1>记忆星图</h1></div>
+  <a class="back" href="/">返回控制台</a>
+  <div class="stats">
+    <div class="stat"><b id="sFacts">—</b><span>长期记忆</span></div>
+    <div class="stat"><b id="sNotes">—</b><span>近期摘要</span></div>
+    <div class="stat"><b id="sNew">—</b><span>最近原话</span></div>
+    <div class="stat"><b id="sLinks">—</b><span>联想</span></div>
+  </div>
+</header>
+<main>
+  <div id="stage">
+    <canvas id="sky"></canvas>
+    <div id="timebar">
+      <button data-cut="3600">1 小时</button>
+      <button data-cut="21600">6 小时</button>
+      <button data-cut="86400">24 小时</button>
+      <button data-cut="0" class="on">全部</button>
+    </div>
+    <div id="err"></div>
+    <div id="zoomBar"><button id="zin">+</button><button id="zout">−</button><button id="zreset">⟲</button></div>
+    <div id="legend">
+      <span><i style="background:#161616"></i>L3 长期</span>
+      <span><i style="background:#9aa4b2"></i>L2 近期</span>
+      <span><i style="background:#fff;box-shadow:0 0 0 1.5px #161616"></i>L1 最近十句</span>
+      <span><i style="background:#464646;box-shadow:0 0 0 1.5px #9aa4b2"></i>L4 档案（含日记）</span>
+      <span><i style="background:#FFFA00;box-shadow:0 0 0 1.5px #161616"></i>日记</span>
+    </div>
+    <div id="hud">—</div>
+    <div id="treeBox">
+      <canvas id="treeCv"></canvas>
+      <div id="treeTip">生命树：每条枝是一次联想，叶子是被想起的记忆，点叶子回放</div>
+    </div>
+  </div>
+  <aside>
+    <div class="head"><span class="eyebrow">Detail</span><b>记忆详情</b></div>
+    <div id="detail"><p class="empty">拖动画布旋转 · 滚轮或 + 放大 · 左上角可按时间筛选 · 点星看详情</p></div>
+  </aside>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  var errBox = document.getElementById('err');
+  function showErr(m) { errBox.style.display = 'block'; errBox.textContent = String(m).slice(0, 600); }
+  window.addEventListener('error', function (e) { showErr('JS 错误：' + (e.message || e.error)); });
+
+  var cv = document.getElementById('sky'), ctx = cv.getContext('2d');
+  var W = 0, H = 0, DPR = Math.min(2, window.devicePixelRatio || 1);
+  var nodes = [], links = [], byId = {};
+  var yaw = 0.7, pitch = -0.22, zoom = 1.0, fitScale = 1, fitOx = 0, fitOy = 0;
+  var dragging = false, moved = 0, lastX = 0, lastY = 0, vx = 0, vy = 0;
+  var selected = null, hovered = null;
+  var frames = 0, fps = 0, lastFpsT = performance.now();
+  var waves = [], pickedWave = -1, highlight = {};
+  var cutoff = 0;
+
+  function resize() {
+    var r = cv.getBoundingClientRect();
+    W = Math.max(1, Math.round(r.width)); H = Math.max(1, Math.round(r.height));
+    cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    computeFit();
+  }
+  window.addEventListener('resize', resize);
+
+  function project(n, z, yy, pp) {
+    var cy = Math.cos(yy), sy = Math.sin(yy);
+    var x1 = n.x * cy - n.z * sy, z1 = n.x * sy + n.z * cy;
+    var cp = Math.cos(pp), sp = Math.sin(pp);
+    var y1 = n.y * cp - z1 * sp, z2 = n.y * sp + z1 * cp;
+    var f = 900 * z, k = f / (f + z2 + 340);
+    return { x: W / 2 + x1 * k, y: H / 2 + y1 * k, k: k, z: z2 };
+  }
+  function computeFit() {
+    if (!nodes.length || !W) { fitScale = 1; return; }
+    var sum = 0;
+    for (var i = 0; i < nodes.length; i++) {
+      var p = project(nodes[i], 1, yaw, pitch);
+      sum += Math.hypot(p.x - W / 2, p.y - H / 2);
+    }
+    var meanR = Math.max(20, sum / nodes.length);
+    fitScale = Math.max(1, Math.min(10, Math.min(W, H) * 0.52 / meanR));
+  }
+  function screenOf(n) {
+    var p = project(n, zoom, yaw, pitch);
+    return { x: W / 2 + (p.x - W / 2) * fitScale, y: H / 2 + (p.y - H / 2) * fitScale, k: p.k, z: p.z };
+  }
+  function ageText(ts) {
+    if (!ts) return '时间未知';
+    var d = new Date(ts * 1000), diff = Date.now() / 1000 - ts;
+    var rel = diff < 90 ? '刚发生' : diff < 3600 ? Math.round(diff / 60) + ' 分钟前'
+      : diff < 86400 ? Math.round(diff / 3600) + ' 小时前' : Math.round(diff / 86400) + ' 天前';
+    var p = function (v) { return v < 10 ? '0' + v : '' + v; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + '（' + rel + '）';
+  }
+  function relDay(ts) {
+    if (!ts) return '';
+    var d = new Date(ts * 1000), n = new Date();
+    var a = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    var b = new Date(n.getFullYear(), n.getMonth(), n.getDate());
+    var days = Math.round((b - a) / 86400000);
+    return days === 0 ? '今天' : days === 1 ? '昨天' : days + ' 天前';
+  }
+  function visible(n) {
+    if (!cutoff) return true;
+    if (!n.ts) return true;
+    return (Date.now() / 1000 - n.ts) <= cutoff;
+  }
+
+  function frame() {
+    frames++;
+    var nowMs = performance.now();
+    if (nowMs - lastFpsT > 500) { fps = Math.round(frames * 1000 / (nowMs - lastFpsT)); frames = 0; lastFpsT = nowMs; }
+    var tsec = nowMs / 1000;
+    ctx.clearRect(0, 0, W, H);
+
+    if (!dragging) {
+      yaw += vx; pitch += vy; vx *= 0.94; vy *= 0.94;
+      pitch = Math.max(-1.45, Math.min(1.45, pitch));
+    }
+
+    var proj = {}, i, n, vis = [];
+    for (i = 0; i < nodes.length; i++) {
+      n = nodes[i];
+      if (!visible(n)) continue;
+      vis.push(n);
+      proj[n.id] = screenOf(n);
+    }
+    if (vis.length) {
+      var mx = 0, my = 0;
+      for (i = 0; i < vis.length; i++) { mx += proj[vis[i].id].x; my += proj[vis[i].id].y; }
+      mx /= vis.length; my /= vis.length;
+      fitOx = W / 2 - mx; fitOy = H / 2 - my;
+      for (i = 0; i < vis.length; i++) { proj[vis[i].id].x += fitOx; proj[vis[i].id].y += fitOy; }
+    }
+
+    var segs = [];
+    for (i = 0; i < links.length; i++) {
+      var l = links[i], a = proj[l.a], b = proj[l.b];
+      if (!a || !b) continue;
+      segs.push({ a: a, b: b, d: (a.z + b.z) / 2, w: l.w, k: l.kind, id1: l.a, id2: l.b });
+    }
+    segs.sort(function (p, q) { return q.d - p.d; });
+    for (i = 0; i < segs.length; i++) {
+      var s = segs[i];
+      var selEdge = selected && (s.id1 === selected.id || s.id2 === selected.id);
+      var alpha = Math.max(0.05, Math.min(0.34, 0.42 - s.d / 2600)) * Math.min(1, s.w);
+      if (s.k === 'semantic' || s.k === 'recent') {
+        ctx.setLineDash([2, 6]);
+        ctx.lineDashOffset = -(tsec * (s.k === 'recent' ? 18 : 9)) % 8;
+      } else ctx.setLineDash([]);
+      ctx.strokeStyle = 'rgba(22,22,22,' + (selEdge ? 0.8 : alpha).toFixed(3) + ')';
+      ctx.lineWidth = selEdge ? 1.6 : 0.7;
+      ctx.beginPath(); ctx.moveTo(s.a.x, s.a.y); ctx.lineTo(s.b.x, s.b.y); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    var order = vis.slice().sort(function (p, q) { return proj[q.id].z - proj[p.id].z; });
+    for (i = 0; i < order.length; i++) {
+      n = order[i];
+      var pp = proj[n.id];
+      var depthK = Math.max(0.35, Math.min(1.3, pp.k));
+      var r = n.r * depthK * (n === hovered ? 1.8 : 1) * (n === selected ? 1.5 : 1);
+      var tw = 0.85 + 0.15 * Math.sin(tsec * 1.6 + (i * 1.7) % 6.28);
+      var al = Math.max(0.2, Math.min(1, (0.32 + pp.k * 0.72) * tw));
+      ctx.beginPath();
+      ctx.arc(pp.x, pp.y, Math.max(1.1, r), 0, Math.PI * 2);
+      if (n.kind === 'fact') ctx.fillStyle = 'rgba(22,22,22,' + al + ')';
+      else if (n.sub === 'diary') ctx.fillStyle = 'rgba(255,250,0,' + Math.min(1, al + 0.3) + ')';
+      else if (n.kind === 'recent') ctx.fillStyle = 'rgba(255,255,255,' + Math.min(1, al + 0.25) + ')';
+      else if (n.kind === 'archive') ctx.fillStyle = 'rgba(70,70,70,' + Math.min(1, al + 0.1) + ')';
+      else ctx.fillStyle = 'rgba(154,164,178,' + al + ')';
+      ctx.fill();
+
+      if (n.kind === 'recent' || n.kind === 'archive' || n.sub === 'diary') {
+        ctx.beginPath(); ctx.arc(pp.x, pp.y, Math.max(1.6, r) + (n.sub === 'diary' ? 5 : 3), 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(22,22,22,' + Math.min(0.85, al) + ')';
+        ctx.lineWidth = 1; ctx.stroke();
+      }
+      if (highlight[n.id]) {
+        ctx.beginPath(); ctx.arc(pp.x, pp.y, Math.max(2, r) + 8, 0, Math.PI * 2);
+        ctx.setLineDash([2, 4]); ctx.strokeStyle = 'rgba(22,22,22,.6)'; ctx.lineWidth = 1.2; ctx.stroke(); ctx.setLineDash([]);
+      }
+      if (n === selected || n === hovered) {
+        var pulse = n === selected ? (1.6 + Math.sin(tsec * 3) * 1.6) : 0;
+        ctx.beginPath(); ctx.arc(pp.x, pp.y, Math.max(2, r) + 6 + pulse, 0, Math.PI * 2);
+        ctx.strokeStyle = n === selected ? 'rgba(22,22,22,.95)' : 'rgba(22,22,22,.35)';
+        ctx.lineWidth = 1; ctx.stroke();
+      }
+      if (zoom > 1.55 && (n.kind === 'fact' || n.sub === 'diary' || n.kind === 'archive' || (n.kind === 'note' && (n.score || 0) >= 5))) {
+        var label = String(n.text || '').slice(0, zoom > 2.6 ? 30 : 16);
+        var tagTxt = (n.tags && n.tags.length) ? '#' + n.tags.slice(0, 2).join(' #') : '';
+        ctx.font = '700 ' + (zoom > 2.6 ? 11 : 10) + 'px Saira, "Microsoft YaHei", sans-serif';
+        ctx.textAlign = 'center';
+        var wText = ctx.measureText(label).width + 10;
+        var yText = pp.y + Math.max(2, r) + 8;
+        ctx.fillStyle = 'rgba(244,244,242,.9)';
+        ctx.fillRect(pp.x - wText / 2, yText, wText, 13);
+        ctx.fillStyle = 'rgba(22,22,22,.9)';
+        ctx.fillText(label, pp.x, yText + 10);
+        if (tagTxt && zoom > 2.1) {
+          ctx.font = '700 9px Saira, sans-serif';
+          ctx.fillStyle = 'rgba(92,92,92,.95)';
+          ctx.fillText(tagTxt, pp.x, yText + 22);
+        }
+      }
+    }
+
+    document.getElementById('hud').textContent =
+      'zoom ' + zoom.toFixed(2) + ' · fit ' + fitScale.toFixed(2) +
+      '\nnodes ' + vis.length + ' / ' + nodes.length + ' · links ' + links.length +
+      '\n' + fps + ' fps · ' + (dragging ? '拖动中' : '静止');
+    requestAnimationFrame(frame);
+  }
+
+  function pick(mx, my) {
+    var best = null, bd = 16 * 16;
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      if (!visible(n)) continue;
+      var p = project(n, zoom, yaw, pitch);
+      p.x = W / 2 + (p.x - W / 2) * fitScale + fitOx;
+      p.y = H / 2 + (p.y - H / 2) * fitScale + fitOy;
+      var d = (p.x - mx) * (p.x - mx) + (p.y - my) * (p.y - my);
+      if (d < bd) { bd = d; best = n; }
+    }
+    return best;
+  }
+
+  function detailOf(n) {
+    if (!n) return;
+    var kindName = { fact: '长期记忆 · L3', note: '近期摘要 · L2', recent: '最近原话 · L1', archive: '长期档案 · L4' }[n.kind] || n.kind;
+    if (n.kind === 'archive' && n.sub === 'diary') kindName = '日记 · L4';
+    var chips = (n.tags || []).map(function (t) { return '<span class="chip accent">#' + t + '</span>'; }).join('');
+    var rel = [];
+    for (var i = 0; i < links.length; i++) {
+      var l = links[i];
+      if (l.a === n.id || l.b === n.id) {
+        var o = byId[l.a === n.id ? l.b : l.a];
+        if (o) rel.push({ o: o, w: l.w });
+      }
+    }
+    rel.sort(function (a, b) { return b.w - a.w; });
+    rel = rel.slice(0, 8);
+    var relHtml = rel.length ? '<div class="links"><h3>连着的记忆 · ' + rel.length + '</h3><ul>' +
+      rel.map(function (r) { return '<li data-id="' + r.o.id + '">' + (r.o.text || '').slice(0, 44) + '</li>'; }).join('') + '</ul></div>' : '';
+    var ts = n.ts || 0;
+    var days = ts ? Math.max(0, (Date.now() / 1000 - ts) / 86400) : 0;
+    var agePct = Math.max(4, Math.min(100, 100 - days * 4));
+    var rows = '<dt>层级</dt><dd>' + kindName + (ts ? ' · ' + relDay(ts) : '') + '</dd>';
+    rows += '<dt>时间</dt><dd>' + ageText(ts) + '</dd>';
+    if (n.kind === 'note' && n.exp) {
+      var lh = (n.exp - Date.now() / 1000) / 3600;
+      rows += '<dt>剩余</dt><dd>' + (lh > 0 ? lh.toFixed(1) + ' 小时后消失' : '已过期') + '</dd>';
+    }
+    if (n.kind === 'archive' && n.count) rows += '<dt>内容</dt><dd>' + n.count + (n.sub === 'diary' ? ' 条大纲' : ' 句原话') + '</dd>';
+    rows += '<div class="agebar"><i style="width:' + agePct.toFixed(0) + '%"></i></div>';
+    if (n.score) rows += '<dt>重要度</dt><dd>' + n.score + ' / 10</dd>';
+    if (n.hits) rows += '<dt>被想起</dt><dd>' + n.hits + ' 次</dd>';
+    if (typeof n.strength === 'number') rows += '<dt>记忆强度</dt><dd>' + (n.strength * 100).toFixed(0) + '%</dd>';
+    if (n.emotion && n.emotion.label) rows += '<dt>情绪</dt><dd>' + n.emotion.label + '</dd>';
+    rows += '<dt>联想</dt><dd>' + rel.length + ' 条</dd>';
+    document.getElementById('detail').innerHTML =
+      '<h2>' + (n.text || '（无内容）') + '</h2>' +
+      (chips ? '<div class="chips">' + chips + '</div>' : '') +
+      '<dl>' + rows + '</dl>' + relHtml;
+  }
+
+  function onDown(e) {
+    dragging = true; moved = 0; vx = 0; vy = 0;
+    lastX = e.clientX; lastY = e.clientY;
+    cv.classList.add('dragging');
+    try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+    e.preventDefault();
+  }
+  function onMove(e) {
+    if (dragging) {
+      var dx = e.clientX - lastX, dy = e.clientY - lastY;
+      moved += Math.abs(dx) + Math.abs(dy);
+      yaw += dx * 0.008;
+      pitch = Math.max(-1.45, Math.min(1.45, pitch + dy * 0.006));
+      vx = dx * 0.0009; vy = dy * 0.0006;
+      lastX = e.clientX; lastY = e.clientY;
+    } else {
+      var r = cv.getBoundingClientRect();
+      hovered = pick(e.clientX - r.left, e.clientY - r.top);
+      cv.style.cursor = hovered ? 'pointer' : 'grab';
+    }
+  }
+  function onUp(e) {
+    if (!dragging) return;
+    dragging = false;
+    cv.classList.remove('dragging');
+    if (moved < 6) {
+      var r = cv.getBoundingClientRect();
+      var hit = pick(e.clientX - r.left, e.clientY - r.top);
+      if (hit) { selected = hit; detailOf(hit); }
+    }
+  }
+  cv.addEventListener('pointerdown', onDown, { passive: false });
+  cv.addEventListener('pointermove', onMove, { passive: true });
+  window.addEventListener('pointerup', onUp, { passive: true });
+  cv.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    zoom = Math.max(0.1, Math.min(60, zoom * (e.deltaY > 0 ? 0.9 : 1.11)));
+  }, { passive: false });
+  document.getElementById('zin').onclick = function () { zoom = Math.min(60, zoom * 1.22); };
+  document.getElementById('zout').onclick = function () { zoom = Math.max(0.1, zoom / 1.22); };
+  document.getElementById('zreset').onclick = function () { zoom = 1.0; yaw = 0.7; pitch = -0.22; computeFit(); };
+
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target && ev.target.closest ? ev.target.closest('#timebar button') : null;
+    if (!btn) return;
+    var all = document.querySelectorAll('#timebar button');
+    for (var k = 0; k < all.length; k++) { all[k].classList.remove('on'); }
+    btn.classList.add('on');
+    cutoff = parseInt(btn.getAttribute('data-cut'), 10) || 0;
+    computeFit();
+  });
+
+  document.querySelectorAll('#timebar button').forEach(function (btn) {
+    btn.onclick = function () {
+      document.querySelectorAll('#timebar button').forEach(function (b) { b.classList.remove('on'); });
+      btn.classList.add('on');
+      cutoff = parseInt(btn.getAttribute('data-cut'), 10) || 0;
+      computeFit();
+    };
+  });
+
+  // ---------- 生命树 ----------
+  function drawTree() {
+    var tc = document.getElementById('treeCv');
+    if (!tc) return;
+    var d = window.devicePixelRatio || 1;
+    var w = Math.max(300, tc.clientWidth), h = 128;
+    tc.width = Math.round(w * d); tc.height = Math.round(h * d);
+    var c = tc.getContext('2d');
+    c.setTransform(d, 0, 0, d, 0, 0);
+    c.clearRect(0, 0, w, h);
+
+    var baseX = w / 2, baseY = h - 4;
+    // soft ground shadow
+    var g = c.createRadialGradient(baseX, baseY, 2, baseX, baseY, 26);
+    g.addColorStop(0, 'rgba(22,22,22,0.16)');
+    g.addColorStop(1, 'rgba(22,22,22,0)');
+    c.fillStyle = g;
+    c.beginPath(); c.ellipse(baseX, baseY, 26, 5, 0, 0, Math.PI * 2); c.fill();
+
+    // tapered trunk
+    c.fillStyle = '#161616';
+    c.beginPath();
+    c.moveTo(baseX - 4.5, baseY);
+    c.quadraticCurveTo(baseX - 2.2, baseY - 16, baseX - 1.2, baseY - 30);
+    c.lineTo(baseX + 1.2, baseY - 30);
+    c.quadraticCurveTo(baseX + 2.2, baseY - 16, baseX + 4.5, baseY);
+    c.closePath();
+    c.fill();
+
+    var list = waves.slice(-7);
+    if (!list.length) {
+      c.fillStyle = '#9a9a94';
+      c.font = '600 10px Saira, sans-serif';
+      c.textAlign = 'center';
+      c.fillText('no associations yet', baseX, baseY - 44);
+      treeLeaves = [];
+      return;
+    }
+
+    var step = w / (list.length + 1);
+    treeLeaves = [];
+    for (var i = 0; i < list.length; i++) {
+      var wv = list[i];
+      var x = step * (i + 1);
+      var n = (wv.hits || []).length;
+      var rise = 28 + Math.min(34, n * 4) + (i % 3) * 7;
+      var topY = Math.max(26, baseY - 26 - rise);
+      var picked = (i === pickedWave);
+      var midX = baseX + (x - baseX) * 0.55;
+
+      // branch: light outer + dark inner for a hand-drawn feel
+      var paths = [
+        { lw: 3.2, color: 'rgba(22,22,22,0.10)' },
+        { lw: 1.4, color: picked ? '#161616' : '#6d6d67' }
+      ];
+      for (var p = 0; p < paths.length; p++) {
+        c.strokeStyle = paths[p].color;
+        c.lineWidth = paths[p].lw;
+        c.lineCap = 'round';
+        c.beginPath();
+        c.moveTo(baseX, baseY - 26);
+        c.bezierCurveTo(midX, baseY - 26 - rise * 0.35, midX, topY + rise * 0.3, x, topY);
+        c.stroke();
+      }
+
+      // twigs
+      c.strokeStyle = picked ? 'rgba(22,22,22,0.55)' : 'rgba(90,90,85,0.45)';
+      c.lineWidth = 0.8;
+      for (var t = 0; t < 2; t++) {
+        var tx = x + (t === 0 ? -5 : 5);
+        c.beginPath();
+        c.moveTo(x, topY + 7);
+        c.quadraticCurveTo(tx, topY, tx + (t === 0 ? -4 : 4), topY - 7);
+        c.stroke();
+      }
+
+      // leaves as small clusters
+      var hits = wv.hits || [];
+      var shown = Math.min(5, hits.length);
+      for (var j = 0; j < shown; j++) {
+        var lx = x + (j - (shown - 1) / 2) * 8 + ((j % 2) ? 1.5 : -1.5);
+        var ly = topY - 6 - (j % 2) * 5;
+        var isLinked = hits[j] && hits[j].linked;
+        var rad = picked ? 3.2 : (isLinked ? 2.9 : 2.2);
+        c.beginPath();
+        c.arc(lx, ly, rad, 0, Math.PI * 2);
+        c.fillStyle = picked ? '#FFFA00' : (isLinked ? '#161616' : '#9aa4b2');
+        c.fill();
+        if (picked) {
+          c.strokeStyle = '#161616'; c.lineWidth = 1; c.stroke();
+        }
+        treeLeaves.push({ x: lx, y: ly, wave: i, hit: hits[j] });
+      }
+
+      // branch label
+      c.textAlign = 'center';
+      c.font = '700 9px Saira, "Microsoft YaHei", sans-serif';
+      c.fillStyle = picked ? '#161616' : '#8f8f89';
+      var label = String(wv.q || '').slice(0, 9);
+      c.fillText(label, x, topY + 14);
+
+      // count badge
+      if (n) {
+        c.font = '700 8px Saira, sans-serif';
+        c.fillStyle = picked ? 'rgba(22,22,22,0.75)' : 'rgba(120,120,114,0.85)';
+        c.fillText(String(n), x, topY + 24);
+      }
+    }
+  }
+  var treeLeaves = [];
+  function pickTree(e) {
+    var tc = document.getElementById('treeCv');
+    if (!tc || !treeLeaves.length) return;
+    var r = tc.getBoundingClientRect();
+    var x = e.clientX - r.left, y = e.clientY - r.top;
+    var best = null, bd = 14 * 14;
+    for (var i = 0; i < treeLeaves.length; i++) {
+      var lf = treeLeaves[i];
+      var d2 = (lf.x - x) * (lf.x - x) + (lf.y - y) * (lf.y - y);
+      if (d2 < bd) { bd = d2; best = lf; }
+    }
+    if (!best) {
+      // 没点中叶子就选最近的一枝
+      var list = waves.slice(-7);
+      if (!list.length) return;
+      var step = tc.clientWidth / (list.length + 1);
+      var idx = Math.round(x / step - 1);
+      idx = Math.max(0, Math.min(list.length - 1, idx));
+      best = { wave: idx, hit: (list[idx].hits || [])[0] };
+    }
+    pickedWave = best.wave;
+    var wv = waves.slice(-7)[best.wave];
+    highlight = {};
+    (wv.hits || []).forEach(function (h) { if (h && h.id) highlight[h.id] = true; });
+    document.getElementById('treeTip').textContent = '「' + (wv.q || '（空话题）') + '」→ 想到 ' + (wv.hits || []).length + ' 条';
+    var node = byId[best.hit && best.hit.id];
+    if (node) { selected = node; detailOf(node); }
+    drawTree();
+  }
+  document.getElementById('treeCv').addEventListener('click', pickTree);
+
+  document.getElementById('detail').addEventListener('click', function (e) {
+    var li = e.target.closest ? e.target.closest('li[data-id]') : null;
+    if (!li) return;
+    var n = byId[li.getAttribute('data-id')];
+    if (n) { selected = n; detailOf(n); }
+  });
+
+  function build(mem) {
+    var g = (mem && mem.graph) || { nodes: [], links: [] };
+    var facts = (mem && mem.facts) || [];
+    var notes = (mem && mem.notes) || [];
+    var recent = ((g.nodes || []).filter(function (n) { return n.kind === 'recent'; })).length;
+    document.getElementById('sFacts').textContent = facts.length;
+    document.getElementById('sNotes').textContent = notes.length;
+    document.getElementById('sNew').textContent = recent;
+    document.getElementById('sLinks').textContent = (g.links || []).length;
+
+    nodes = []; byId = {}; links = [];
+    var list = g.nodes || [];
+    var total = list.length || 1;
+    var golden = Math.PI * (3 - Math.sqrt(5));
+    for (var i = 0; i < list.length; i++) {
+      var n = list[i];
+      var yy = 1 - (i / Math.max(1, total - 1)) * 2;
+      var rad = Math.sqrt(Math.max(0, 1 - yy * yy));
+      var theta = golden * i;
+      var st = (typeof n.strength === 'number') ? n.strength : 0.5;
+      var shell, r;
+      if (n.kind === 'recent') { shell = 52; r = 3.2; }
+      else if (n.kind === 'fact') { shell = 95 + (1 - st) * 30; r = 3.4 + st * 2.4; }
+      else if (n.sub === 'diary') { shell = 320; r = 6.0; }
+      else if (n.kind === 'archive') { shell = 250; r = 5.0; yy = ((i % 5) - 2) * 0.34; rad = Math.sqrt(Math.max(0, 1 - yy * yy)); }
+      else { shell = 400 - st * 300; r = 1.6 + st * 2.4; }
+      var el = {
+        id: n.id, kind: n.kind, sub: n.sub || '', text: n.text || '', tags: n.tags || [],
+        score: n.score, hits: n.hits, ts: n.ts || 0, exp: n.exp || 0,
+        emotion: n.emotion || {}, count: n.count, strength: st,
+        x: Math.cos(theta) * rad * shell, y: yy * shell * 0.85, z: Math.sin(theta) * rad * shell, r: r
+      };
+      nodes.push(el); byId[el.id] = el;
+    }
+    for (var j = 0; j < (g.links || []).length; j++) {
+      var lk = g.links[j];
+      if (byId[lk.a] && byId[lk.b]) links.push({ a: lk.a, b: lk.b, w: lk.w || 1, kind: lk.kind || 'tag' });
+    }
+    waves = (mem && mem.waves) || [];
+    highlight = {};
+    computeFit();
+    drawTree();
+  }
+
+  window.__dbg = { nodes: function () { return nodes; }, state: function () { return { zoom: zoom, fit: fitScale }; }, setZoom: function (z) { zoom = z; } };
+
+  function refresh() {
+    fetch('/api/cloud', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
+      build(d.memory || {});
+    }).catch(function (e) { showErr('加载记忆失败：' + e); });
+  }
+
+  resize();
+  requestAnimationFrame(frame);
+  refresh();
+  setInterval(refresh, 10000);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,163 @@
+{
+  "enabled": {
+    "type": "bool",
+    "description": "启用记忆与日记",
+    "default": true
+  },
+  "owner_id": {
+    "type": "string",
+    "description": "主人 QQ 号（只对这个人的私聊做记忆）",
+    "default": "16774996"
+  },
+  "persona_id": {
+    "type": "string",
+    "description": "长期记忆与日记写入的人格名（必填；留空则不写人格，只存磁盘）",
+    "default": "",
+    "hint": "填你 AstrBot 里已有的人格名，例如『大肥鱼』。留空则记忆不会写进人格，只能靠检索注入。"
+  },
+  "session_prefix": {
+    "type": "string",
+    "description": "记忆哪些会话",
+    "default": "snowluma:FriendMessage:"
+  },
+  "cheap_provider_id": {
+    "type": "string",
+    "description": "总结/打标签用的便宜模型",
+    "default": "deepseek/deepseek-flash"
+  },
+  "embedding_provider_id": {
+    "type": "string",
+    "description": "向量模型（用于语义联想）",
+    "default": "bailian_embedding"
+  },
+  "embed_min_sim": {
+    "type": "float",
+    "description": "语义边阈值（越高越严格）",
+    "default": 0.74
+  },
+  "embed_batch": {
+    "type": "int",
+    "description": "向量化批量（阿里接口上限 10）",
+    "default": 8
+  },
+  "l1_window": {
+    "type": "int",
+    "description": "L1 保留最近多少句",
+    "default": 10
+  },
+  "l2_ttl_hours": {
+    "type": "int",
+    "description": "L2 摘要保留小时数",
+    "default": 24
+  },
+  "l2_max_inject": {
+    "type": "int",
+    "description": "每轮最多注入几条近期摘要",
+    "default": 12
+  },
+  "recall_top_k": {
+    "type": "int",
+    "description": "检索命中数量",
+    "default": 6
+  },
+  "recall_inject_max": {
+    "type": "int",
+    "description": "注入记忆条数上限",
+    "default": 8
+  },
+  "assoc_expand": {
+    "type": "int",
+    "description": "一跳联想扩展条数",
+    "default": 2
+  },
+  "assoc_similarity": {
+    "type": "float",
+    "description": "文本相似建边阈值",
+    "default": 0.38
+  },
+  "graph_max_degree": {
+    "type": "int",
+    "description": "每个记忆点最多连几条",
+    "default": 8
+  },
+  "graph_max_links": {
+    "type": "int",
+    "description": "联想边总数上限",
+    "default": 260
+  },
+  "decay_days": {
+    "type": "int",
+    "description": "关联权重衰减半衰期（天）",
+    "default": 45
+  },
+  "forget_l2_below": {
+    "type": "float",
+    "description": "L2 强度低于此值即遗忘",
+    "default": 0.08
+  },
+  "forget_l3_below": {
+    "type": "float",
+    "description": "L3 强度低于此值转入下沉",
+    "default": 0.12
+  },
+  "fact_park_days": {
+    "type": "int",
+    "description": "多久没提起就下沉（天）",
+    "default": 180
+  },
+  "fact_persona_max": {
+    "type": "int",
+    "description": "人格里最多保留多少条长期记忆",
+    "default": 30
+  },
+  "fact_sync_min_minutes": {
+    "type": "int",
+    "description": "人格刷新最小间隔（分钟）",
+    "default": 10
+  },
+  "sync_facts_to_persona": {
+    "type": "bool",
+    "description": "长期记忆写进人格",
+    "default": true
+  },
+  "compress_batch": {
+    "type": "int",
+    "description": "每次压缩多少条",
+    "default": 20
+  },
+  "compress_max_batches": {
+    "type": "int",
+    "description": "每轮最多压缩几批",
+    "default": 8
+  },
+  "sync_interval_minutes": {
+    "type": "int",
+    "description": "后台同步周期（分钟）",
+    "default": 1
+  },
+  "diary_interval_days": {
+    "type": "int",
+    "description": "每隔多少天写一篇日记",
+    "default": 14
+  },
+  "diary_persona_entries": {
+    "type": "int",
+    "description": "人格里保留几篇日记（最新一篇含正文）",
+    "default": 2
+  },
+  "diary_max_input_chars": {
+    "type": "int",
+    "description": "写日记时喂给模型的字数上限",
+    "default": 12000
+  },
+  "web_port": {
+    "type": "int",
+    "description": "记忆星图页面端口",
+    "default": 8788
+  },
+  "tag_max": {
+    "type": "int",
+    "description": "每条记忆标签数（词表制，固定 5）",
+    "default": 5
+  }
+}
