@@ -103,7 +103,7 @@ class MemoryLayersPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None):
         super().__init__(context)
         self.config = config or {}
-        self.data_dir = Path(StarTools.get_data_dir("astrbot_plugin_wave"))
+        self.data_dir = Path(StarTools.get_data_dir("astrbot_plugin_waves"))
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.archive_dir = self.data_dir / "archive"
         self.archive_dir.mkdir(parents=True, exist_ok=True)
@@ -1070,7 +1070,7 @@ class MemoryLayersPlugin(Star):
 
     def _recent_nodes(self, limit: int | None = None) -> list[dict]:
         """L1: recent messages with DS summary and 5 tags."""
-        limit = limit or self._int("l1_window", 10, 2)
+        limit = limit or self._int("l1_window", 20, 2)
         out: list[dict] = []
         try:
             recent = [m for m in (self.recent_meta or []) if (m.get("text") or "").strip()][-limit:]

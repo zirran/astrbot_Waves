@@ -1,4 +1,4 @@
-# 海浪 · astrbot_plugin_wave
+# 海浪 · astrbot_plugin_waves
 
 <img src="logo.png" width="150" align="right" alt="wave logo">
 
@@ -340,7 +340,7 @@ git clone https://github.com/zirran/astrbot_Waves.git
 
 ## 十三、数据目录
 
-`AstrBot/data/plugin_data/astrbot_plugin_wave/`
+`AstrBot/data/plugin_data/astrbot_plugin_waves/`
 
 ```
 archive/             L4 每日原话（jsonl）
