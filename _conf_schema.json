@@ -7,7 +7,7 @@
   "owner_id": {
     "type": "string",
     "description": "主人 QQ 号（只对这个人的私聊做记忆）",
-    "default": "16774996"
+    "default": "325325325325"
   },
   "persona_id": {
     "type": "string",
