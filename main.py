@@ -535,6 +535,29 @@ class MemoryLayersPlugin(Star):
             logger.debug(f"[Wave] promote failed: {exc}")
             return 0
 
+    WEIGHT_BASE = ((("约定", "承诺", "身份", "边界", "情感", "关系"), 3.0),
+                   (("偏好", "作息", "习惯", "口味"), 2.5),
+                   (("梗", "表情", "玩笑"), 1.6))
+
+    def _fact_weight(self, fact: dict, now: float | None = None) -> float:
+        """权重 = 类型基础分 + 强化 - 时间衰减（每天 -0.1）。"""
+        try:
+            now = now or time.time()
+            tags = "/".join(str(t) for t in (fact.get("tags") or []))
+            base = 1.3
+            for words, score in self.WEIGHT_BASE:
+                if any(w in tags for w in words):
+                    base = score
+                    break
+            if fact.get("pinned"):
+                base = max(base, 3.5)
+            hits = int(fact.get("hits") or 1)
+            last = float(fact.get("last_seen") or fact.get("created") or now)
+            days = max(0.0, (now - last) / DAY)
+            return round(base + 0.5 * min(6, hits - 1) - 0.1 * days, 3)
+        except Exception:
+            return 1.3
+
     def _dedupe_facts(self) -> int:
         """把说同一件事的多条事实合并掉，避免 L3 臃肿。"""
         try:
@@ -711,8 +734,19 @@ class MemoryLayersPlugin(Star):
                 alive.append(fact)
                 continue
             age_days = (now - float(fact.get("last_seen") or fact.get("created") or now)) / DAY
-            if (s < floor_l3 or age_days > park_days) and int(fact.get("hits", 1)) <= 1 and not fact.get("pinned"):
+            _w = self._fact_weight(fact, now)
+            if (_w < 1.0 or age_days > park_days) and not fact.get("pinned"):
+                if parked >= 3:
+                    continue
                 fact["parked"] = True
+                try:
+                    ap = self.data_dir / "facts_archive.json"
+                    arr = json.loads(ap.read_text(encoding="utf-8")) if ap.exists() else []
+                    arr.append({"text": fact.get("text"), "tags": fact.get("tags") or [],
+                                "weight": _w, "archived_at": time.strftime("%Y-%m-%d %H:%M")})
+                    ap.write_text(json.dumps(arr[-500:], ensure_ascii=False, indent=2), encoding="utf-8")
+                except Exception:
+                    pass
                 fact["parked_at"] = now
                 parked += 1
             alive.append(fact)
@@ -741,6 +775,10 @@ class MemoryLayersPlugin(Star):
                 f"[记忆] 遗忘：L2 过期 {expired} / 弱化删除 {weak} 条；"
                 f"L3 下沉 {parked} 条 / 彻底忘记 {deleted} 条（仍记得 {len(active)}）"
             )
+            if time.time() - float(self.state.get("last_backup") or 0) > DAY:
+                self._daily_backup()
+                self.state["last_backup"] = time.time()
+                self._save_state()
             if time.time() - float(self.state.get("last_index") or 0) > DAY:
                 self._build_archive_index()
                 self.state["last_index"] = time.time()
@@ -793,6 +831,31 @@ class MemoryLayersPlugin(Star):
             return {"label": label, "n": counter[label]}
         except Exception:
             return {}
+
+    def _daily_backup(self, keep_days: int = 7) -> None:
+        """把记忆数据每天复制一份，保留最近 7 天。"""
+        try:
+            today = time.strftime("%Y%m%d")
+            root = self.data_dir.parent / ".backups" / "wave" / today
+            if root.exists():
+                return
+            root.mkdir(parents=True, exist_ok=True)
+            import shutil
+            for name in ("l1_meta.json", "l2_notes.json", "l3_facts.json", "diary_state.json",
+                         "graph.json", "state.json", "archive_index.json"):
+                src = self.data_dir / name
+                if src.exists():
+                    shutil.copy2(src, root / name)
+            arc = self.data_dir / "archive"
+            if arc.exists():
+                shutil.copytree(arc, root / "archive", dirs_exist_ok=True)
+            base = self.data_dir.parent / ".backups" / "wave"
+            olds = sorted([p for p in base.iterdir() if p.is_dir()], reverse=True)
+            for old in olds[keep_days:]:
+                shutil.rmtree(old, ignore_errors=True)
+            logger.info(f"[Wave] 备份完成：{today}，保留 {min(len(olds), keep_days)} 份")
+        except Exception as exc:
+            logger.warning(f"[Wave] 备份失败: {exc}")
 
     def _build_archive_index(self) -> dict:
         """给 L4 每日存档建一份索引：每天的主题标签 + 一句代表内容。"""
