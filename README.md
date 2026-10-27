@@ -273,8 +273,8 @@ git clone https://github.com/zirran/astrbot_Waves.git
 
 | 键 | 默认 | 说明 |
 |---|---|---|
-| `owner_id` | 16774996 | 只对这个人的私聊做记忆 |
-| `persona_id` | 大肥鱼 | 长期记忆与日记写进哪个人格 |
+| `owner_id` | <QQ号> | 只对这个人的私聊做记忆 |
+| `persona_id` | <人格名称> | 长期记忆与日记写进哪个人格 |
 | `recall_top_k` | 5 | 检索命中数量 |
 | `recall_inject_max` | 5 | 注入条数上限（高分时自动降到 3） |
 | `recall_score_floor` | 1.2 | 注入分数门槛（会自适应） |
