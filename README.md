@@ -1,6 +1,6 @@
 # 海浪 · astrbot_plugin_waves
 
-<img src="logo.png" width="150" align="right" alt="wave logo">
+<img src="https://astrbot-cloud-test-s3.astrbot.app/plugins/assets/zirran/astrbot_plugin_waves/a86defac6d00d1789f0f4674f78583c82869cc11be9bbc67fb1d80bcadd157ee.png" width="150" align="right" alt="wave logo">
 
 **给 AstrBot 的「记忆 + 日记 + 情感 + 星图」一体化插件。**
 
@@ -34,7 +34,7 @@
 ---
 
 ## 目录
-- [海浪 · astrbot\_plugin\_wave](#海浪--astrbot_plugin_wave)
+- [海浪 · astrbot\_plugin\_waves](#海浪--astrbot_plugin_waves)
   - [特性速览](#特性速览)
   - [目录](#目录)
   - [一、它解决什么问题](#一它解决什么问题)
