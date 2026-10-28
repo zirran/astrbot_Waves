@@ -159,5 +159,25 @@
     "type": "int",
     "description": "每条记忆标签数（词表制，固定 5）",
     "default": 5
+  },
+  "relationship_start": {
+    "type": "string",
+    "description": "认识的第一天（YYYY-MM-DD），用于注入『认识第 N 天』",
+    "default": ""
+  },
+  "fact_capacity": {
+    "type": "int",
+    "description": "长期事实超过多少条开始批量归档",
+    "default": 120
+  },
+  "fact_archive_batch": {
+    "type": "int",
+    "description": "一次归档多少条",
+    "default": 20
+  },
+  "snapshot_keep": {
+    "type": "int",
+    "description": "压缩前快照保留份数",
+    "default": 10
   }
 }

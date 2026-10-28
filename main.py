@@ -327,6 +327,7 @@ class MemoryLayersPlugin(Star):
             return "busy"
         self._busy = True
         try:
+            self._snapshot("before-compress")
             batch_size = self._int("compress_batch", 20, 5)
             pending = list(self.state.get("pending") or [])
             if not pending:
@@ -541,9 +542,14 @@ class MemoryLayersPlugin(Star):
                    (("梗", "表情", "玩笑"), 1.6))
 
     def _fact_weight(self, fact: dict, now: float | None = None) -> float:
-        """权重 = 类型基础分 + 强化 - 时间衰减（每天 -0.1）。"""
+        """权重 = 类型基础分 × 可信度 + 强化 - 时间衰减（每天 -0.1）。"""
         try:
             now = now or time.time()
+            if float(fact.get("confidence") or 1.0) == 0:
+                return -99.0
+            vu = float(fact.get("valid_until") or 0)
+            if vu and vu < now:
+                return -99.0
             tags = "/".join(str(t) for t in (fact.get("tags") or []))
             base = 1.3
             for words, score in self.WEIGHT_BASE:
@@ -552,12 +558,113 @@ class MemoryLayersPlugin(Star):
                     break
             if fact.get("pinned"):
                 base = max(base, 3.5)
+            try:
+                conf = float(fact.get("confidence")) if fact.get("confidence") is not None else (1.0 if str(fact.get("source") or "") == "owner" else 0.65)
+            except Exception:
+                conf = 0.65
+            if conf < 0.5:
+                base *= 0.45
+            elif conf < 0.75:
+                base *= 0.7
             hits = int(fact.get("hits") or 1)
             last = float(fact.get("last_seen") or fact.get("created") or now)
             days = max(0.0, (now - last) / DAY)
             return round(base + 0.5 * min(6, hits - 1) - 0.1 * days, 3)
         except Exception:
             return 1.3
+
+    def _snapshot(self, tag: str = "manual") -> None:
+        """压缩前存一份状态快照，保留最近 10 份。"""
+        try:
+            import shutil
+            root = self.data_dir / "snapshots"
+            root.mkdir(parents=True, exist_ok=True)
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            dest = root / f"{stamp}-{tag}"
+            dest.mkdir(exist_ok=True)
+            for name in ("l3_facts.json", "l2_notes.json", "state.json", "diary_state.json"):
+                src = self.data_dir / name
+                if src.exists():
+                    shutil.copy2(src, dest / name)
+            snaps = sorted([p for p in root.iterdir() if p.is_dir()])
+            keep = self._int("snapshot_keep", 10, 1)
+            for old in snaps[: max(0, len(snaps) - keep)]:
+                shutil.rmtree(old, ignore_errors=True)
+        except Exception as exc:
+            logger.debug(f"[Wave] snapshot failed: {exc}")
+
+    def _archive_facts(self, victims: list[dict], reason: str) -> None:
+        try:
+            ap = self.data_dir / "facts_archive.json"
+            arr = json.loads(ap.read_text(encoding="utf-8")) if ap.exists() else []
+            for f in victims:
+                arr.append({"text": f.get("text"), "tags": f.get("tags") or [],
+                            "w": self._fact_weight(f), "reason": reason,
+                            "archived_at": time.strftime("%Y-%m-%d %H:%M")})
+            ap.write_text(json.dumps(arr[-500:], ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _expire_facts(self, now: float | None = None) -> int:
+        """带到期时间的记忆，过期即移入归档。"""
+        now = now or time.time()
+        dead = [f for f in self.l3
+                if not f.get("parked") and float(f.get("valid_until") or 0)
+                and float(f.get("valid_until")) < now]
+        if not dead:
+            return 0
+        self._archive_facts(dead, "expired")
+        ids = {id(f) for f in dead}
+        self.l3 = [f for f in self.l3 if id(f) not in ids]
+        self._save(self.l3_path, self.l3)
+        logger.info(f"[Wave] expired {len(dead)} facts")
+        return len(dead)
+
+    def _archive_capacity(self) -> int:
+        """活跃事实超过上限时，把权重最低的收进归档。"""
+        active = [f for f in self.l3 if not f.get("parked")]
+        cap = self._int("fact_capacity", 120, 20)
+        if len(active) <= cap:
+            return 0
+        batch = max(self._int("fact_archive_batch", 20, 5), len(active) - cap)
+        victims = sorted(active, key=lambda f: self._fact_weight(f))[:batch]
+        self._archive_facts(victims, "capacity")
+        ids = {id(f) for f in victims}
+        self.l3 = [f for f in self.l3 if id(f) not in ids]
+        self._save(self.l3_path, self.l3)
+        logger.info(f"[Wave] capacity archive: -{len(victims)}, left {len(self.l3)}")
+        return len(victims)
+
+    def _invalidate_fact(self, keyword: str) -> str:
+        """主人说记错了：把匹配到的那条作废（不再注入、不进人格）。"""
+        q = str(keyword or "").strip()
+        if not q:
+            return "要给个关键词我才知道撤回哪条"
+        cands = [f for f in self.l3 if not f.get("parked") and q in str(f.get("text") or "")]
+        if not cands:
+            return f"没找到包含「{q}」的记忆"
+        cands.sort(key=lambda f: len(str(f.get("text") or "")))
+        hit = cands[0]
+        hit["confidence"] = 0
+        hit["w"] = 0
+        hit["invalidated_at"] = time.time()
+        self._save(self.l3_path, self.l3)
+        asyncio.create_task(self._apply_persona())
+        return f"已作废：{str(hit.get('text'))[:40]}"
+
+    def _relationship_line(self) -> str:
+        start = str(self.cfg("relationship_start", "") or "").strip()
+        if not start:
+            return ""
+        try:
+            import datetime as _dt
+            d0 = _dt.datetime.strptime(start, "%Y-%m-%d").date()
+            n = (_dt.date.today() - d0).days + 1
+            if n > 0:
+                return f"【关系】今天是认识的第 {n} 天（{start} 起）\n"
+        except Exception:
+            pass
+        return ""
 
     def _dedupe_facts(self) -> int:
         """把说同一件事的多条事实合并掉，避免 L3 臃肿。"""
@@ -570,7 +677,11 @@ class MemoryLayersPlugin(Star):
             for fact in facts:
                 gram = bigrams(str(fact.get("text") or ""))
                 target = None
+                _num_now = ",".join(re.findall(r"\d+", str(fact.get("text") or "")))
                 for kept in out:
+                    _num_k = ",".join(re.findall(r"\d+", str(kept.get("text") or "")))
+                    if _num_now != _num_k:
+                        continue
                     if jaccard(gram, bigrams(str(kept.get("text") or ""))) >= 0.72:
                         target = kept
                         break
@@ -616,17 +727,21 @@ class MemoryLayersPlugin(Star):
         except Exception:
             return True
 
-    def _add_fact(self, text: str, now: float, tags: list[str] | None = None, emotion: dict | None = None) -> None:
+    def _add_fact(self, text: str, now: float, tags: list[str] | None = None, emotion: dict | None = None, source: str | None = None, valid_until: float = 0.0, pinned: bool = False) -> None:
         text = " ".join(text.split())[:200]
         if not text:
             return
-        if not (pinned if "pinned" in locals() else False) and not self._fact_worth(text):
+        if not pinned and not self._fact_worth(text):
             logger.debug("[Wave] skip low-value fact: " + text[:30])
             return
         if tags:
             tags = self._norm_tags(list(tags))
         if any(bad in text for bad in ("无法发送", "素材库为空", "合成失败", "暂时不能", "还不能发", "尚未接通")):
             return
+        # 数字不同就别当同一件事
+        def _nums(t: str) -> str:
+            return ",".join(re.findall(r"\d+", str(t or "")))
+
         # 语义相近的旧事实：用新的替换（覆盖过期/矛盾的说法）
         vec = self.emb.get(text_key(text)) or []
         for fact in self.l3:
@@ -641,14 +756,22 @@ class MemoryLayersPlugin(Star):
                     sim = cosine(vec, old_vec)
             else:
                 sim = jaccard(bigrams(text), bigrams(old_text))
-            if same_text or sim >= 0.72:
+            if (same_text or sim >= 0.72) and _nums(text) == _nums(old_text):
                 fact["text"] = text
                 fact["last_seen"] = now
                 fact["hits"] = int(fact.get("hits", 1)) + 1
                 merged_tags = list(dict.fromkeys((fact.get("tags") or []) + (tags or [])))[:6]
                 fact["tags"] = merged_tags
                 return
-        self.l3.append({"text": text, "created": now, "last_seen": now, "hits": 1, "tags": tags or [], "emotion": emotion or {}})
+        _src = source or ("owner" if pinned else "inferred")
+        fact = {"text": text, "created": now, "last_seen": now, "hits": 1,
+                "tags": tags or [], "emotion": emotion or {},
+                "source": _src, "confidence": 1.0 if _src == "owner" else 0.65}
+        if pinned:
+            fact["pinned"] = True
+        if valid_until:
+            fact["valid_until"] = float(valid_until)
+        self.l3.append(fact)
 
     def _prune_l2(self) -> None:
         now = time.time()
@@ -784,7 +907,9 @@ class MemoryLayersPlugin(Star):
                 self._build_archive_index()
                 self.state["last_index"] = time.time()
             self._promote_hot_notes()
+            self._expire_facts()
             self._dedupe_facts()
+            self._archive_capacity()
         return f"L2 -{expired + weak}, L3 下沉 {parked}, 忘记 {deleted}"
     # ---------- graph / association ----------
     TRIVIAL = ("晚安", "早", "在吗", "好的", "嗯", "哦", "哈哈", "收到", "1", "6", "？", "?")
@@ -2207,7 +2332,7 @@ class MemoryLayersPlugin(Star):
                 recent = [n for n in self.l2 if n.get("expires_at", 0) > now][-4:]
                 if not recent:
                     return
-                block = "\n\n【最近聊过的】\n" + "\n".join(f"· [{self._day_label(n.get('ts'))}] {n['summary']}" for n in recent) + "\n"
+                block = "\n\n" + self._relationship_line() + "【最近聊过的】\n" + "\n".join(f"· [{self._day_label(n.get('ts'))}] {n['summary']}" for n in recent) + "\n"
             else:
                 lines = []
                 for hit in hits:
@@ -2228,7 +2353,7 @@ class MemoryLayersPlugin(Star):
                     if len(_picked_lines) >= _cap:
                         break
                 lines = _picked_lines
-                block = ("\n\n【联想记忆｜只在和这句话直接相关时用，最多引用一条；不相关就完全忽略，不要为了用记忆而换话题】\n"
+                block = ("\n\n" + self._relationship_line() + "【联想记忆｜只在和这句话直接相关时用，最多引用一条；不相关就完全忽略，不要为了用记忆而换话题】\n"
                          + "\n".join(lines[:_cap]) + "\n")
                 mood = self._mood_trend()
                 if mood and abs(mood.get("avg", 0)) >= 0.15:

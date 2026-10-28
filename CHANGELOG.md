@@ -1,5 +1,27 @@
 # 更新日志
 
+## v1.2.0
+
+### 新增
+
+- **可信度加权**：事实分 `owner`（用户原话，1.0）与 `inferred`（推断，0.65），
+  权重按可信度打折（<0.5 打 0.45，<0.75 打 0.7）
+- **作废**：`/记忆 撤回 关键词` 把记错的那条置为 confidence=0，不再注入、退出人格，也不参与继承
+- **过期**：事实可带 `valid_until`，到点自动移入 `facts_archive.json`（reason=expired）
+- **容量归档**：活跃事实超过 `fact_capacity`（默认 120）时，按权重最低归档一批（默认 20）
+- **压缩前快照**：每次压缩前把 l3/l2/state/日记复制到 `snapshots/时间-标签/`，保留 10 份
+- **关系天数**：配置 `relationship_start` 后，注入时会带上「今天是认识的第 N 天」
+- **数字守卫**：相似度再高，只要数字不同就不合并
+
+### 说明
+
+- 归档只搬走，不删除；`facts_archive.json` 保留最近 500 条
+- 新增配置：`relationship_start`、`fact_capacity`、`fact_archive_batch`、`snapshot_keep`
+
+---
+
+
+
 ## v1.1.1
 
 按插件市场审核意见整改。
