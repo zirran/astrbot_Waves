@@ -1,7 +1,7 @@
 name: astrbot_plugin_waves
 display_name: 海浪
 desc: 记忆与日记的一体化插件：L1–L4 四层记忆、可信度加权、联想推理、作废与过期、自动归档与快照、每两周一篇带大纲的日记，并内置可交互的记忆星图。
-version: 1.2.0
+version: 1.2.1
 author: zirranya
 repo: "https://github.com/zirran/astrbot_Waves"
 astrbot_version: ">=4.17.0"

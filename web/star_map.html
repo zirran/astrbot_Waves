@@ -6,36 +6,39 @@
 <title>记忆星图 · QQ BOT</title>
 <link rel="stylesheet" href="/theme/endfield.css">
 <style>
-  :root{--paper:#f4f4f2;--ink:#161616;--gray:#5c5c5c;--line:#d9d9d4;--accent:#FFFA00}
+  :root{--paper:#060a12;--ink:#d9e8ff;--gray:#7d92b6;--line:#16233a;--accent:#4ff0ff;--panel:rgba(10,18,32,.86)}
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
-  body{background:var(--paper);color:var(--ink);overflow:hidden;font-family:"Saira","Microsoft YaHei",system-ui,sans-serif;display:flex;flex-direction:column}
-  header{display:flex;align-items:flex-end;gap:14px;padding:12px 20px 9px;border-bottom:1px solid var(--line);flex:0 0 auto}
+  body{color:var(--ink);overflow:hidden;font-family:"Saira","Microsoft YaHei",system-ui,sans-serif;display:flex;flex-direction:column;background:radial-gradient(1100px 700px at 18% 8%, rgba(38,96,180,.28) 0%, rgba(38,96,180,0) 62%),radial-gradient(900px 620px at 82% 92%, rgba(150,60,220,.22) 0%, rgba(150,60,220,0) 62%),radial-gradient(700px 500px at 50% 50%, rgba(20,60,120,.20) 0%, rgba(0,0,0,0) 70%),linear-gradient(180deg,#050810 0%, #070c16 55%, #04070d 100%)}
+  header{display:flex;align-items:flex-end;gap:14px;padding:12px 20px 9px;border-bottom:1px solid var(--line);flex:0 0 auto;background:linear-gradient(180deg,rgba(8,14,26,.92),rgba(8,14,26,.55));backdrop-filter:blur(6px)}
   .eyebrow{font-weight:700;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--gray)}
   header h1{margin:2px 0 0;font-size:22px;font-weight:900}
-  header a.back{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);text-decoration:none;border:1px solid var(--ink);padding:6px 10px;align-self:center}
-  header a.back:hover{background:var(--ink);color:var(--paper)}
+  header a.back{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);text-decoration:none;border:1px solid rgba(79,240,255,.45);padding:6px 10px;align-self:center;box-shadow:0 0 12px rgba(79,240,255,.15) inset}
+  header a.back:hover{background:rgba(79,240,255,.16);color:#eafcff}
   header .stats{margin-left:auto;display:flex;gap:16px}
   header .stat b{display:block;font-size:15px;font-weight:900}
   header .stat span{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--gray)}
   main{flex:1;display:flex;min-height:0}
   #stage{position:relative;flex:1;min-width:0;min-height:0}
-  canvas#sky{position:absolute;left:0;top:0;right:0;bottom:150px;width:100%;height:calc(100% - 150px);display:block;touch-action:none;user-select:none;cursor:grab}
+  body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:linear-gradient(rgba(79,240,255,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(79,240,255,.055) 1px,transparent 1px);
+  background-size:44px 44px;mask-image:radial-gradient(1200px 800px at 50% 42%,#000 30%,transparent 92%)}
+canvas#sky{position:absolute;left:0;top:0;right:0;bottom:200px;width:100%;height:calc(100% - 200px);display:block;touch-action:none;user-select:none;cursor:grab}
   canvas#sky.dragging{cursor:grabbing}
   #timebar{position:absolute;left:16px;top:12px;display:flex;gap:6px;z-index:6}
-  #timebar button{font:700 11px/1 Saira,sans-serif;letter-spacing:.08em;padding:6px 10px;border:1px solid var(--ink);background:var(--paper);color:var(--ink);cursor:pointer;text-transform:uppercase}
-  #timebar button.on{background:var(--ink);color:var(--accent)}
-  #legend{position:absolute;left:16px;bottom:158px;display:flex;gap:14px;font-size:11px;color:var(--gray);pointer-events:none}
+  #timebar button{font:700 11px/1 Saira,sans-serif;letter-spacing:.08em;padding:6px 10px;border:1px solid rgba(79,240,255,.28);background:rgba(10,20,36,.7);color:var(--gray);cursor:pointer;text-transform:uppercase}
+  #timebar button.on{background:rgba(79,240,255,.16);color:#eafcff;border-color:var(--accent);box-shadow:0 0 14px rgba(79,240,255,.35)}
+  #legend{position:absolute;left:16px;bottom:208px;display:flex;gap:14px;font-size:11px;color:var(--gray);pointer-events:none}
   #legend i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle}
-  #hud{position:absolute;right:14px;bottom:158px;font:11px/1.5 ui-monospace,Consolas,monospace;color:var(--gray);pointer-events:none;text-align:right;white-space:pre}
+  #hud{position:absolute;right:14px;bottom:208px;font:11px/1.5 ui-monospace,Consolas,monospace;color:var(--gray);pointer-events:none;text-align:right;white-space:pre}
   #err{position:absolute;left:14px;top:46px;right:14px;background:#fff2f2;border:1px solid #c00;color:#900;font:12px/1.5 ui-monospace,monospace;padding:8px;display:none;white-space:pre-wrap;z-index:9}
   #zoomBar{position:absolute;right:14px;top:12px;display:flex;flex-direction:column;gap:6px;z-index:6}
-  #zoomBar button{width:30px;height:30px;border:1px solid var(--ink);background:var(--paper);color:var(--ink);font:700 15px/1 ui-monospace,monospace;cursor:pointer;padding:0}
-  #zoomBar button:hover{background:var(--ink);color:var(--accent)}
-  #treeBox{position:absolute;left:0;right:0;bottom:0;height:150px;border-top:1px solid var(--line);background:rgba(244,244,242,.96);padding:4px 12px 0}
-  #treeCv{width:100%;height:120px;display:block;cursor:pointer}
-  #treeTip{font-size:10px;letter-spacing:.05em;color:var(--gray);height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  aside{width:326px;flex:0 0 326px;border-left:1px solid var(--line);background:#fafaf8;display:flex;flex-direction:column;min-height:0}
+  #zoomBar button{width:30px;height:30px;border:1px solid rgba(79,240,255,.3);background:rgba(10,20,36,.8);color:var(--ink);font:700 15px/1 ui-monospace,monospace;cursor:pointer;padding:0}
+  #zoomBar button:hover{background:rgba(79,240,255,.18);color:#eafcff}
+  #treeBox{position:absolute;left:0;right:0;bottom:0;height:200px;border-top:1px solid var(--line);background:linear-gradient(180deg,rgba(8,15,27,.96),rgba(5,9,17,.98));padding:4px 12px 0;box-shadow:0 -10px 30px rgba(0,0,0,.55), 0 -1px 0 rgba(79,240,255,.12)}
+  #treeCv{width:100%;height:168px;display:block;cursor:pointer}
+  #treeTip{display:none;font-size:10px;letter-spacing:.05em;color:var(--gray);height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  aside{width:326px;flex:0 0 326px;border-left:1px solid var(--line);background:linear-gradient(180deg,rgba(9,16,29,.95),rgba(6,11,20,.95));display:flex;flex-direction:column;min-height:0}
   aside .head{padding:12px 15px 8px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:8px}
   aside .head .eyebrow{font-size:10px}
   aside .head b{font-size:13px}
@@ -43,13 +46,13 @@
   #detail .empty{color:var(--gray);font-size:13px;line-height:1.9}
   #detail h2{font-size:15px;font-weight:900;line-height:1.6;margin:0 0 10px;border-left:3px solid var(--accent);padding-left:9px}
   .chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px}
-  .chip{font-size:11px;padding:3px 8px;border:1px solid var(--ink);border-radius:999px}
-  .chip.accent{background:var(--accent)}
+  .chip{font-size:11px;padding:3px 8px;border:1px solid rgba(79,240,255,.35);border-radius:999px;color:#cfe3ff}
+  .chip.accent{background:rgba(79,240,255,.9);color:#031019}
   dl{margin:0;display:grid;grid-template-columns:72px 1fr;gap:6px 8px;font-size:12px}
   dt{color:var(--gray);letter-spacing:.06em;font-size:10px;text-transform:uppercase;padding-top:2px}
   dd{margin:0;line-height:1.6}
   .agebar{height:3px;background:#e6e6e0;margin:8px 0 10px;grid-column:1/-1}
-  .agebar i{display:block;height:3px;background:var(--ink)}
+  .agebar i{display:block;height:3px;background:linear-gradient(90deg,#4ff0ff,#8a6bff)}
   .links{margin-top:13px}
   .links h3{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);margin:0 0 6px}
   .links ul{margin:0;padding:0}
@@ -89,7 +92,7 @@
     <div id="hud">—</div>
     <div id="treeBox">
       <canvas id="treeCv"></canvas>
-      <div id="treeTip">生命树：每条枝是一次联想，叶子是被想起的记忆，点叶子回放</div>
+      <div id="treeTip"><b>记忆脉络</b> · 横轴是时间（左下「早了」→ 右下「最近」）；每根竖线 = 你说的一句话，高度 = 这句话想起的记忆条数；点光点回放（青色 = 当前查看的那次）</div>
     </div>
   </div>
   <aside>
@@ -210,7 +213,7 @@
         ctx.setLineDash([2, 6]);
         ctx.lineDashOffset = -(tsec * (s.k === 'recent' ? 18 : 9)) % 8;
       } else ctx.setLineDash([]);
-      ctx.strokeStyle = 'rgba(22,22,22,' + (selEdge ? 0.8 : alpha).toFixed(3) + ')';
+      ctx.strokeStyle = 'rgba(96,190,255,' + (selEdge ? 0.85 : alpha * 0.9).toFixed(3) + ')';
       ctx.lineWidth = selEdge ? 1.6 : 0.7;
       ctx.beginPath(); ctx.moveTo(s.a.x, s.a.y); ctx.lineTo(s.b.x, s.b.y); ctx.stroke();
     }
@@ -226,26 +229,26 @@
       var al = Math.max(0.2, Math.min(1, (0.32 + pp.k * 0.72) * tw));
       ctx.beginPath();
       ctx.arc(pp.x, pp.y, Math.max(1.1, r), 0, Math.PI * 2);
-      if (n.kind === 'fact') ctx.fillStyle = 'rgba(22,22,22,' + al + ')';
-      else if (n.sub === 'diary') ctx.fillStyle = 'rgba(255,250,0,' + Math.min(1, al + 0.3) + ')';
-      else if (n.kind === 'recent') ctx.fillStyle = 'rgba(255,255,255,' + Math.min(1, al + 0.25) + ')';
-      else if (n.kind === 'archive') ctx.fillStyle = 'rgba(70,70,70,' + Math.min(1, al + 0.1) + ')';
-      else ctx.fillStyle = 'rgba(154,164,178,' + al + ')';
+      if (n.kind === 'fact') ctx.fillStyle = 'rgba(120,236,255,' + al + ')';
+      else if (n.sub === 'diary') ctx.fillStyle = 'rgba(255,236,120,' + Math.min(1, al + 0.3) + ')';
+      else if (n.kind === 'recent') ctx.fillStyle = 'rgba(235,246,255,' + Math.min(1, al + 0.25) + ')';
+      else if (n.kind === 'archive') ctx.fillStyle = 'rgba(150,120,240,' + Math.min(1, al + 0.15) + ')';
+      else ctx.fillStyle = 'rgba(130,160,210,' + al + ')';
       ctx.fill();
 
       if (n.kind === 'recent' || n.kind === 'archive' || n.sub === 'diary') {
         ctx.beginPath(); ctx.arc(pp.x, pp.y, Math.max(1.6, r) + (n.sub === 'diary' ? 5 : 3), 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(22,22,22,' + Math.min(0.85, al) + ')';
+        ctx.strokeStyle = 'rgba(200,235,255,' + Math.min(0.9, al) + ')';
         ctx.lineWidth = 1; ctx.stroke();
       }
       if (highlight[n.id]) {
         ctx.beginPath(); ctx.arc(pp.x, pp.y, Math.max(2, r) + 8, 0, Math.PI * 2);
-        ctx.setLineDash([2, 4]); ctx.strokeStyle = 'rgba(22,22,22,.6)'; ctx.lineWidth = 1.2; ctx.stroke(); ctx.setLineDash([]);
+        ctx.setLineDash([2, 4]); ctx.strokeStyle = 'rgba(255,236,120,.55)'; ctx.lineWidth = 1.2; ctx.stroke(); ctx.setLineDash([]);
       }
       if (n === selected || n === hovered) {
         var pulse = n === selected ? (1.6 + Math.sin(tsec * 3) * 1.6) : 0;
         ctx.beginPath(); ctx.arc(pp.x, pp.y, Math.max(2, r) + 6 + pulse, 0, Math.PI * 2);
-        ctx.strokeStyle = n === selected ? 'rgba(22,22,22,.95)' : 'rgba(22,22,22,.35)';
+        ctx.strokeStyle = n === selected ? 'rgba(79,240,255,.95)' : 'rgba(120,190,255,.35)';
         ctx.lineWidth = 1; ctx.stroke();
       }
       if (zoom > 1.55 && (n.kind === 'fact' || n.sub === 'diary' || n.kind === 'archive' || (n.kind === 'note' && (n.score || 0) >= 5))) {
@@ -255,13 +258,13 @@
         ctx.textAlign = 'center';
         var wText = ctx.measureText(label).width + 10;
         var yText = pp.y + Math.max(2, r) + 8;
-        ctx.fillStyle = 'rgba(244,244,242,.9)';
+        ctx.fillStyle = 'rgba(4,10,20,.92)';
         ctx.fillRect(pp.x - wText / 2, yText, wText, 13);
-        ctx.fillStyle = 'rgba(22,22,22,.9)';
+        ctx.fillStyle = 'rgba(210,238,255,.95)';
         ctx.fillText(label, pp.x, yText + 10);
         if (tagTxt && zoom > 2.1) {
           ctx.font = '700 9px Saira, sans-serif';
-          ctx.fillStyle = 'rgba(92,92,92,.95)';
+          ctx.fillStyle = 'rgba(140,170,210,.95)';
           ctx.fillText(tagTxt, pp.x, yText + 22);
         }
       }
@@ -388,113 +391,118 @@
     };
   });
 
-  // ---------- 生命树 ----------
+  // ---------- 记忆脉络（时间轴） ----------
   function drawTree() {
     var tc = document.getElementById('treeCv');
     if (!tc) return;
     var d = window.devicePixelRatio || 1;
-    var w = Math.max(300, tc.clientWidth), h = 128;
+    var w = Math.max(300, tc.clientWidth), h = Math.max(120, tc.clientHeight - 16);
     tc.width = Math.round(w * d); tc.height = Math.round(h * d);
     var c = tc.getContext('2d');
     c.setTransform(d, 0, 0, d, 0, 0);
     c.clearRect(0, 0, w, h);
 
-    var baseX = w / 2, baseY = h - 4;
-    // soft ground shadow
-    var g = c.createRadialGradient(baseX, baseY, 2, baseX, baseY, 26);
-    g.addColorStop(0, 'rgba(22,22,22,0.16)');
-    g.addColorStop(1, 'rgba(22,22,22,0)');
-    c.fillStyle = g;
-    c.beginPath(); c.ellipse(baseX, baseY, 26, 5, 0, 0, Math.PI * 2); c.fill();
+    var ACCENT = '#4ff0ff', LINE = 'rgba(79,240,255,.16)', DIM = 'rgba(140,170,210,.75)';
 
-    // tapered trunk
-    c.fillStyle = '#161616';
-    c.beginPath();
-    c.moveTo(baseX - 4.5, baseY);
-    c.quadraticCurveTo(baseX - 2.2, baseY - 16, baseX - 1.2, baseY - 30);
-    c.lineTo(baseX + 1.2, baseY - 30);
-    c.quadraticCurveTo(baseX + 2.2, baseY - 16, baseX + 4.5, baseY);
-    c.closePath();
-    c.fill();
+    // 底：极淡渐变 + 横向扫描线
+    var bg = c.createLinearGradient(0, 0, 0, h);
+    bg.addColorStop(0, 'rgba(10,18,32,.55)');
+    bg.addColorStop(1, 'rgba(4,9,17,.55)');
+    c.fillStyle = bg; c.fillRect(0, 0, w, h);
+    c.strokeStyle = 'rgba(79,240,255,.05)'; c.lineWidth = 1;
+    for (var sy = 0; sy < h; sy += 6) { c.beginPath(); c.moveTo(0, sy + .5); c.lineTo(w, sy + .5); c.stroke(); }
+
+    var axisY = Math.min(h - 38, Math.round(h * 0.56));
+    var left = 26, right = w - 26;
+
+    // 轴
+    c.strokeStyle = LINE; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(left, axisY); c.lineTo(right, axisY); c.stroke();
+    // 轴两端方向
+    c.fillStyle = DIM; c.font = '700 9px "Microsoft YaHei", sans-serif'; c.textAlign = 'left';
+    c.fillText('早了', left, axisY + 13);
+    c.textAlign = 'right';
+    c.fillText('最近 →', right, axisY + 13);
+
+    // 顶部说明
+    c.textAlign = 'left';
+    c.fillStyle = 'rgba(140,170,210,.9)';
+    c.font = '700 9.5px "Microsoft YaHei", sans-serif';
+    c.fillText('每根竖线 = 你说的一句话　｜　越高 = 想起越多条记忆　｜　点光点可回放', left, 13);
 
     var list = waves.slice(-7);
+    treeLeaves = [];
     if (!list.length) {
-      c.fillStyle = '#9a9a94';
-      c.font = '600 10px Saira, sans-serif';
+      c.fillStyle = 'rgba(140,170,210,.8)';
       c.textAlign = 'center';
-      c.fillText('no associations yet', baseX, baseY - 44);
-      treeLeaves = [];
+      c.font = '600 11px "Microsoft YaHei", sans-serif';
+      c.fillText('还没有联想记录 —— 聊几句就会长出来', (left + right) / 2, axisY - 26);
       return;
     }
 
-    var step = w / (list.length + 1);
-    treeLeaves = [];
+    var step = (right - left) / Math.max(1, list.length);
     for (var i = 0; i < list.length; i++) {
       var wv = list[i];
-      var x = step * (i + 1);
-      var n = (wv.hits || []).length;
-      var rise = 28 + Math.min(34, n * 4) + (i % 3) * 7;
-      var topY = Math.max(26, baseY - 26 - rise);
-      var picked = (i === pickedWave);
-      var midX = baseX + (x - baseX) * 0.55;
-
-      // branch: light outer + dark inner for a hand-drawn feel
-      var paths = [
-        { lw: 3.2, color: 'rgba(22,22,22,0.10)' },
-        { lw: 1.4, color: picked ? '#161616' : '#6d6d67' }
-      ];
-      for (var p = 0; p < paths.length; p++) {
-        c.strokeStyle = paths[p].color;
-        c.lineWidth = paths[p].lw;
-        c.lineCap = 'round';
-        c.beginPath();
-        c.moveTo(baseX, baseY - 26);
-        c.bezierCurveTo(midX, baseY - 26 - rise * 0.35, midX, topY + rise * 0.3, x, topY);
-        c.stroke();
-      }
-
-      // twigs
-      c.strokeStyle = picked ? 'rgba(22,22,22,0.55)' : 'rgba(90,90,85,0.45)';
-      c.lineWidth = 0.8;
-      for (var t = 0; t < 2; t++) {
-        var tx = x + (t === 0 ? -5 : 5);
-        c.beginPath();
-        c.moveTo(x, topY + 7);
-        c.quadraticCurveTo(tx, topY, tx + (t === 0 ? -4 : 4), topY - 7);
-        c.stroke();
-      }
-
-      // leaves as small clusters
       var hits = wv.hits || [];
-      var shown = Math.min(5, hits.length);
+      var n = hits.length;
+      var x = left + step * (i + 0.5);
+      var picked = (i === pickedWave);
+      var barH = 18 + Math.min(58, n * 7);
+
+      // 柱（发光竖线）
+      c.save();
+      c.strokeStyle = picked ? ACCENT : 'rgba(120,190,255,.55)';
+      c.lineWidth = picked ? 2.2 : 1.2;
+      if (picked) { c.shadowColor = ACCENT; c.shadowBlur = 12; }
+      c.beginPath(); c.moveTo(x, axisY); c.lineTo(x, axisY - barH); c.stroke();
+      c.restore();
+
+      // 柱顶节点
+      c.beginPath();
+      c.arc(x, axisY - barH, picked ? 3.6 : 2.6, 0, Math.PI * 2);
+      c.fillStyle = picked ? ACCENT : 'rgba(180,220,255,.9)';
+      c.fill();
+
+      // 叶子：沿柱两侧分布，代表被想起的记忆
+      var shown = Math.min(6, n);
       for (var j = 0; j < shown; j++) {
-        var lx = x + (j - (shown - 1) / 2) * 8 + ((j % 2) ? 1.5 : -1.5);
-        var ly = topY - 6 - (j % 2) * 5;
+        var t = (j + 1) / (shown + 1);
+        var ly = axisY - barH * t;
+        var side = (j % 2) ? 1 : -1;
+        var lx = x + side * (6 + (j % 3) * 2);
         var isLinked = hits[j] && hits[j].linked;
-        var rad = picked ? 3.2 : (isLinked ? 2.9 : 2.2);
         c.beginPath();
-        c.arc(lx, ly, rad, 0, Math.PI * 2);
-        c.fillStyle = picked ? '#FFFA00' : (isLinked ? '#161616' : '#9aa4b2');
+        c.arc(lx, ly, picked ? 2.8 : 2.0, 0, Math.PI * 2);
+        c.fillStyle = picked ? '#ffec78' : (isLinked ? '#8a6bff' : '#5d88b8');
         c.fill();
-        if (picked) {
-          c.strokeStyle = '#161616'; c.lineWidth = 1; c.stroke();
-        }
         treeLeaves.push({ x: lx, y: ly, wave: i, hit: hits[j] });
       }
 
-      // branch label
+      // 句子的胶囊：轴下交错两行
+      var label = String(wv.q || '').trim();
+      if (label.length > 6) label = label.slice(0, 6) + '…';
+      if (!label) label = '（空）';
+      label = label + ' · ' + n;
+      c.font = '700 9px "Microsoft YaHei", sans-serif';
+      var tw = c.measureText(label).width;
+      var chipW = Math.min(step - 10, tw + 10), chipH = 13;
+      var chipX = Math.min(Math.max(2, x - chipW / 2), w - chipW - 2);
+      var chipY = axisY + 14 + (i % 2) * 16;
+      var rr = 4;
+      c.beginPath();
+      c.moveTo(chipX + rr, chipY);
+      c.lineTo(chipX + chipW - rr, chipY); c.quadraticCurveTo(chipX + chipW, chipY, chipX + chipW, chipY + rr);
+      c.lineTo(chipX + chipW, chipY + chipH - rr); c.quadraticCurveTo(chipX + chipW, chipY + chipH, chipX + chipW - rr, chipY + chipH);
+      c.lineTo(chipX + rr, chipY + chipH); c.quadraticCurveTo(chipX, chipY + chipH, chipX, chipY + chipH - rr);
+      c.lineTo(chipX, chipY + rr); c.quadraticCurveTo(chipX, chipY, chipX + rr, chipY);
+      c.closePath();
+      c.fillStyle = picked ? 'rgba(79,240,255,.18)' : 'rgba(12,22,38,.9)';
+      c.fill();
+      c.strokeStyle = picked ? ACCENT : 'rgba(79,240,255,.22)';
+      c.lineWidth = 1; c.stroke();
+      c.fillStyle = picked ? '#eafcff' : 'rgba(180,205,240,.9)';
       c.textAlign = 'center';
-      c.font = '700 9px Saira, "Microsoft YaHei", sans-serif';
-      c.fillStyle = picked ? '#161616' : '#8f8f89';
-      var label = String(wv.q || '').slice(0, 9);
-      c.fillText(label, x, topY + 14);
-
-      // count badge
-      if (n) {
-        c.font = '700 8px Saira, sans-serif';
-        c.fillStyle = picked ? 'rgba(22,22,22,0.75)' : 'rgba(120,120,114,0.85)';
-        c.fillText(String(n), x, topY + 24);
-      }
+      c.fillText(label, chipX + chipW / 2, chipY + 10.5);
     }
   }
   var treeLeaves = [];
@@ -583,7 +591,7 @@
   window.__dbg = { nodes: function () { return nodes; }, state: function () { return { zoom: zoom, fit: fitScale }; }, setZoom: function (z) { zoom = z; } };
 
   function refresh() {
-    fetch('/api/cloud'+location.search, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
+    fetch('/api/cloud' + location.search, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
       build(d.memory || {});
     }).catch(function (e) { showErr('加载记忆失败：' + e); });
   }

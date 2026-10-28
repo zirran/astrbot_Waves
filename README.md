@@ -10,8 +10,6 @@
 
 > **必须配 embedding 模型**，否则没有语义边与向量近邻，只剩标签联想。
 >
-> 星图 UI 风格来自 [`endfield-ui-skill-main`](https://github.com/hhikr/endfield-ui-skill) 仓库。
->
 > 希望这个插件成为一个公众项目，让百家争鸣成为集百家之长，打造一个真正既省 Token、又能帮 AI 更长久地记住「你」与 TA 的一切的记忆系统。
 
 ---

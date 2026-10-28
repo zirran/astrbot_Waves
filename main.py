@@ -2266,17 +2266,67 @@ class MemoryLayersPlugin(Star):
         except Exception as exc:
             logger.warning(f"[记忆] 即时记忆失败: {exc}")
 
+    def _private_chat_ok(self, umo: str) -> bool:
+        """兼容多个平台：snowluma(OneBot) 与 qq_official(C2C)。"""
+        allows = [x.strip() for x in str(self.cfg("platform_allow", "snowluma,qq_official") or "").split(",") if x.strip()]
+        marks = [x.strip() for x in str(self.cfg("private_markers", "FriendMessage,C2CMessage") or "").split(",") if x.strip()]
+        if allows and not any(a in umo for a in allows):
+            return False
+        return any(m in umo for m in marks)
+
+    def _owner_ids(self) -> list[str]:
+        raw = str(self.cfg("owner_id", "") or "")
+        ids = [x.strip() for x in raw.replace("，", ",").split(",") if x.strip()]
+        return ids
+
+    def _note_owner_candidate(self, sid: str, umo: str) -> None:
+        """记录见过但不在 owner_id 里的发送者，方便把官方机器人的 openid 填进配置。"""
+        try:
+            seen = self.state.setdefault("owner_candidates", [])
+            key = f"{sid}|{umo.split(':')[0] if umo else ''}"
+            if key in seen:
+                return
+            seen.append(key)
+            self.state["owner_candidates"] = seen[-20:]
+            self._save_state()
+            logger.info(f"[记忆] 新的私聊来源 sender={sid} umo={umo}；如这是主人，把它填进 owner_id")
+        except Exception:
+            pass
+
+    def _record_event_message(self, text: str, role: str = "user") -> None:
+        """官方机器人没有本地会话库可读，直接按事件归档到 L4 + pending。"""
+        try:
+            text = str(text or "").strip()
+            if not text:
+                return
+            day = time.strftime("%Y-%m-%d")
+            rec = {"ts": time.time(), "role": role, "text": text[:500]}
+            self.archive_dir.mkdir(parents=True, exist_ok=True)
+            with (self.archive_dir / f"{day}.jsonl").open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            pending = list(self.state.get("pending") or [])
+            pending.append(rec)
+            self.state["pending"] = pending[-500:]
+            self._save_state()
+        except Exception as exc:
+            logger.debug(f"[记忆] 事件归档失败: {exc}")
+
     # ---------- injection ----------
     @filter.on_llm_request()
     async def inject(self, event: AstrMessageEvent, req: ProviderRequest):
         try:
             umo = str(getattr(event, "unified_msg_origin", "") or "")
-            if ":FriendMessage:" not in umo:
+            if not self._private_chat_ok(umo):
                 return
-            owner = str(self.cfg("owner_id", "16774996"))
-            if owner and str(event.get_sender_id()) != owner:
+            sid = str(event.get_sender_id())
+            owners = self._owner_ids()
+            if owners and sid not in owners:
+                self._note_owner_candidate(sid, umo)
                 return
             # 实时收录：每条新消息立刻进 L1/L4，星图马上能看到
+            _is_onebot = "snowluma" in umo or ":FriendMessage:" in umo
+            if not _is_onebot:
+                self._record_event_message(str(getattr(event, "message_str", "") or ""))
             try:
                 added = await asyncio.to_thread(self.sync_archive_sync)
                 if added:
@@ -2567,8 +2617,10 @@ class MemoryLayersPlugin(Star):
                         self.end_headers()
                         self.wfile.write(body)
                         return
-                    if self.path in ("/", "/index.html"):
-                        self.path = "/star_map.html"
+                    _path_only = self.path.split("?", 1)[0]
+                    if _path_only in ("", "/", "/index.html"):
+                        _qs = self.path.split("?", 1)[1] if "?" in self.path else ""
+                        self.path = "/star_map.html" + (("?" + _qs) if _qs else "")
                     return super().do_GET()
 
             port = self._int("web_port", 8788, 1024)
