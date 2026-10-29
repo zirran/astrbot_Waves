@@ -738,7 +738,7 @@ class MemoryLayersPlugin(Star):
             tags = self._norm_tags(list(tags))
         if any(bad in text for bad in ("无法发送", "素材库为空", "合成失败", "暂时不能", "还不能发", "尚未接通")):
             return
-        # 数字不同就别当同一件事
+        # 数字不同就别当同一件事（「抽玉溪」和「抽中华」不是一条）
         def _nums(t: str) -> str:
             return ",".join(re.findall(r"\d+", str(t or "")))
 
@@ -1594,15 +1594,21 @@ class MemoryLayersPlugin(Star):
         "开心": 0.7, "高兴": 0.7, "喜欢": 0.6, "爱": 0.7, "谢谢": 0.4, "好耶": 0.8,
         "笑": 0.4, "哈哈": 0.4, "期待": 0.5, "舒服": 0.5, "棒": 0.6, "满足": 0.5,
         "感动": 0.6, "安心": 0.4, "放松": 0.5, "得意": 0.5, "好吃": 0.5,
-        "顺利": 0.4, "赢了": 0.7, "被夸": 0.6,
+        "顺利": 0.4, "赢了": 0.7, "被夸": 0.6, "不错": 0.45, "可爱": 0.5, "幸福": 0.7,
         "难过": -0.7, "委屈": -0.8, "累": -0.6, "烦": -0.6, "生气": -0.8, "气死": -0.9,
         "焦虑": -0.6, "怕": -0.6, "担心": -0.5, "哭": -0.8, "孤独": -0.7, "想哭": -0.8,
         "崩溃": -0.9, "压力": -0.6, "失眠": -0.6, "疼": -0.6, "生病": -0.5,
         "失望": -0.7, "后悔": -0.6, "被骂": -0.7, "吵架": -0.7,
-        "好累": -0.7, "没意思": -0.5, "受不了": -0.8,
+        "好累": -0.7, "没意思": -0.5, "受不了": -0.8, "难受": -0.7, "emo": -0.6, "讨厌": -0.6,
     }
 
-    NEGATIONS = ("不", "没", "别", "无", "未", "毫不")
+    # 含情绪字但不是那个意思的复合词
+    EXCLUDE_COMPOUNDS = ("累积", "积累", "累计", "连累", "拖累", "麻烦", "烦请", "烦劳",
+                         "开心果", "开心点", "爱心", "爱好", "热爱", "可爱", "怕生", "疼我")
+    NEGATIONS = ("不", "没", "别", "无", "未", "毫不", "并没有", "没那么")
+    NEG_TAILS = ("不起来", "不了", "不下去", "不动")
+    INTENSIFY = {"超级": 1.5, "特别": 1.35, "非常": 1.35, "太": 1.3, "巨": 1.4,
+                 "有点": 0.65, "稍微": 0.6, "一点点": 0.55, "略微": 0.55}
 
     def _mood_trend(self) -> dict:
         """近 7 天 L2 情绪的平均值（60 秒缓存，避免每轮重算）。"""
@@ -1624,9 +1630,11 @@ class MemoryLayersPlugin(Star):
                 label = str(emo.get("label") or "").strip()
                 if label:
                     labels[label] = labels.get(label, 0) + 1
-            if not vals:
+            if len(vals) < 3:
                 return {}
-            avg = sum(vals) / len(vals)
+            vals.sort()
+            mid = len(vals) // 2
+            avg = vals[mid] if len(vals) % 2 else (vals[mid - 1] + vals[mid]) / 2
             top = max(labels, key=labels.get) if labels else ""
             out = {"avg": round(avg, 2), "label": top, "n": len(vals)}
             self._mood_cache = (time.time(), out)
@@ -1634,39 +1642,65 @@ class MemoryLayersPlugin(Star):
         except Exception:
             return {}
 
-    def _emotion_of(self, text: str) -> dict:
-        """给一段话判情绪：优先用词典，返回 {label, v}。"""
-        try:
-            text = str(text or "")
-            best, best_abs = "", 0.0
-            for word, v in self.EMOTION_WORDS.items():
-                if word in text and abs(v) > best_abs:
-                    best, best_abs = word, abs(v)
-            v = self._query_valence(text)
-            if not best and abs(v) < 0.15:
-                return {}
-            return {"label": best or ("正面" if v > 0 else "负面"), "v": round(v, 2)}
-        except Exception:
-            return {}
+    def _emotion_analysis(self, text: str) -> dict:
+        """情绪分析：按词命中、处理否定/程度/固定否定尾，返回 v/label/pos/neg。"""
+        t = str(text or "")
+        empty = {"v": 0.0, "label": "", "pos": 0, "neg": 0, "n": 0, "words": []}
+        if not t:
+            return empty
+        hits = []
+        for word, base in self.EMOTION_WORDS.items():
+            idx = t.find(word)
+            while idx >= 0:
+                nxt = idx + len(word)
+                span = t[max(0, idx - 2): nxt + 2]
+                if any(x != word and x in span for x in self.EXCLUDE_COMPOUNDS):
+                    idx = t.find(word, nxt)
+                    continue
+                head = t[max(0, idx - 5): idx]
+                flip = (sum(1 for n in self.NEGATIONS if n in head) % 2 == 1)
+                tail = t[nxt: nxt + 3]
+                if any(tail.startswith(x) for x in self.NEG_TAILS):
+                    flip = not flip
+                scale = 1.0
+                for k, sc in self.INTENSIFY.items():
+                    if k in head[-3:]:
+                        scale = sc
+                        break
+                val = base * scale * (-0.9 if flip else 1.0)
+                hits.append((word, val, base))
+                idx = t.find(word, nxt)
+        if not hits:
+            return empty
+        pos = sum(v for _, v, _ in hits if v > 0)
+        neg = -sum(v for _, v, _ in hits if v < 0)
+        total = pos + neg
+        v = ((pos - neg) / total) * min(1.0, total / 1.2) if total else 0.0
+        best_word, best_val, best_base = max(hits, key=lambda x: abs(x[1]))
+        if (best_val > 0) != (best_base > 0):
+            label = "正面" if best_val > 0 else "负面"
+        elif pos > 0 and neg > 0:
+            label = "复杂"
+        else:
+            label = best_word
+        return {"v": round(max(-1.0, min(1.0, v)), 2), "label": label,
+                "pos": sum(1 for _, x, _ in hits if x > 0),
+                "neg": sum(1 for _, x, _ in hits if x < 0),
+                "n": len(hits), "words": [w for w, _, _ in hits]}
 
     def _query_valence(self, text: str) -> float:
-        """判断这句话的情绪倾向，会处理否定词（「不开心」算负面）。"""
-        text = str(text or "")
-        if not text:
-            return 0.0
-        vals = []
-        for word, v in self.EMOTION_WORDS.items():
-            idx = text.find(word)
-            while idx >= 0:
-                head = text[max(0, idx - 2):idx]
-                if any(head.endswith(neg) for neg in self.NEGATIONS):
-                    vals.append(-v * 0.9)
-                else:
-                    vals.append(v)
-                idx = text.find(word, idx + 1)
-        if not vals:
-            return 0.0
-        return max(-1.0, min(1.0, sum(vals) / len(vals)))
+        """这句话的情绪倾向（-1 ~ 1）。"""
+        return self._emotion_analysis(text)["v"]
+
+    def _emotion_of(self, text: str) -> dict:
+        """给一段话打情绪标签：{label, v}。"""
+        try:
+            r = self._emotion_analysis(text)
+            if not r["label"] and abs(r["v"]) < 0.15:
+                return {}
+            return {"label": r["label"] or ("正面" if r["v"] > 0 else "负面"), "v": r["v"]}
+        except Exception:
+            return {}
 
     def reinforce_mentions(self, text: str) -> int:
         """用户这次又提到的事：被提起一次就更牢一点。"""
@@ -1691,6 +1725,32 @@ class MemoryLayersPlugin(Star):
             return 0
 
     @staticmethod
+    def _short_when(self, ts) -> str:
+        """把时间压成极短标签：今天/昨天/3天前/09-12。不占几个 token。"""
+        try:
+            t = float(ts or 0)
+            if not t:
+                return ""
+            now = time.time()
+            days = int((now - t) // DAY)
+            if days <= 0:
+                return "今天"
+            if days == 1:
+                return "昨天"
+            if days < 30:
+                return f"{days}天前"
+            return time.strftime("%m-%d", time.localtime(t))
+        except Exception:
+            return ""
+
+    def _now_line(self) -> str:
+        """一行现在时间，让她对时间有概念。"""
+        try:
+            wd = "日一二三四五六"[int(time.strftime("%w"))]
+            return f"【现在】{time.strftime('%Y-%m-%d')} 周{wd} {time.strftime('%H:%M')}\n"
+        except Exception:
+            return ""
+
     def _day_label(ts) -> str:
         """把时间戳说成 今天/昨天/N天前。"""
         try:
@@ -2009,6 +2069,7 @@ class MemoryLayersPlugin(Star):
                 "text": node["text"],
                 "tags": node.get("tags") or [],
                 "linked": nid in extra,
+                "ts": float(node.get("ts") or 0),
                 "score": round(float(next((sc for sc, x in scored if x == nid), 0.0)), 2),
             })
             if node["kind"] == "fact":
@@ -2311,6 +2372,10 @@ class MemoryLayersPlugin(Star):
         except Exception as exc:
             logger.debug(f"[记忆] 事件归档失败: {exc}")
 
+    # 这些是"系统说明书"式的记忆，注入了她会用系统口吻说话
+    META_NOISE = ("系统授权", "系统", "授权我", "指令", "插件", "配置项", "权限",
+                  "token", "prompt", "接口", "部署", "运行状态", "省token")
+
     # ---------- injection ----------
     @filter.on_llm_request()
     async def inject(self, event: AstrMessageEvent, req: ProviderRequest):
@@ -2382,14 +2447,20 @@ class MemoryLayersPlugin(Star):
                 recent = [n for n in self.l2 if n.get("expires_at", 0) > now][-4:]
                 if not recent:
                     return
-                block = "\n\n" + self._relationship_line() + "【最近聊过的】\n" + "\n".join(f"· [{self._day_label(n.get('ts'))}] {n['summary']}" for n in recent) + "\n"
+                block = "\n\n" + self._now_line() + self._relationship_line() + "【最近聊过的】\n" + "\n".join(f"· [{self._day_label(n.get('ts'))}] {n['summary']}" for n in recent) + "\n"
             else:
                 lines = []
                 for hit in hits:
+                    _txt = str(hit.get("text") or "")
+                    if any(_bad in _txt for _bad in self.META_NOISE):
+                        continue
+                    _txt = _txt.replace("主人", "你").replace("用户", "你")
                     tag = ("#" + " #".join(hit["tags"][:2]) + " ") if hit["tags"] else ""
                     prefix = {"fact": "长期", "note": "近期", "diary": "日记"}.get(hit["kind"], "")
                     mark = "↳" if hit["linked"] else "·"
-                    lines.append(f"{mark}[{prefix}]{tag}{hit['text'][:50]}")
+                    _when = self._short_when(hit.get("ts"))
+                    _wtxt = "" if (not _when or _when == "今天") else (_when + " ")
+                    lines.append(f"{mark}[{prefix}]{tag}{_wtxt}{_txt[:50]}")
                 _cap = self._int("recall_inject_max", 5, 2)
                 if len(lines) > 1 and float(hits[0].get("score") or 0) >= 3.0:
                     _cap = min(_cap, 3)
@@ -2403,7 +2474,7 @@ class MemoryLayersPlugin(Star):
                     if len(_picked_lines) >= _cap:
                         break
                 lines = _picked_lines
-                block = ("\n\n" + self._relationship_line() + "【联想记忆｜只在和这句话直接相关时用，最多引用一条；不相关就完全忽略，不要为了用记忆而换话题】\n"
+                block = ("\n\n" + self._now_line() + self._relationship_line() + "【联想记忆｜下面是记忆要点，不是台词：只取事实，用你自己的话说；只在相关时引用一条，不相关就忽略】\n"
                          + "\n".join(lines[:_cap]) + "\n")
                 mood = self._mood_trend()
                 if mood and abs(mood.get("avg", 0)) >= 0.15:
@@ -2412,10 +2483,11 @@ class MemoryLayersPlugin(Star):
                     if mood.get("label"):
                         block += f"，多次出现「{mood['label']}」"
                     block += "。说话时顺着这个气氛，别硬转话题，也别主动提起情绪本身。\n"
-                if qval <= -0.5:
+                _ea = self._emotion_analysis(query)
+                if _ea["neg"] >= 2 and _ea["v"] <= -0.55:
                     block += "【他现在的状态】情绪很沉。先接住，别给建议、别分析原因、别问为什么，一句话就够。\n"
-                elif qval >= 0.5:
-                    block += "【他现在的状态】心情不错，可以顺着他的劲儿聊，别扫兴。\n"
+                elif _ea["pos"] >= 2 and _ea["v"] >= 0.55:
+                    block += "【他现在的状态】心情不错，顺着他的劲儿聊，别扫兴。\n"
                 if qval and any(abs(float((h.get("emotion") or {}).get("v") or 0)) > 0.3 for h in hits):
                     block += "【情绪共鸣】这次想起的事里有当时的情绪，可以顺着那份感觉接话，但别复述情绪词。\n"
                 chain = self.reason_chain(hits)
@@ -2750,6 +2822,30 @@ class MemoryLayersPlugin(Star):
             f"待压缩：{len(self.state.get('pending') or [])} 条\n遗忘记录：{(sum(1 for _ in (self.data_dir / 'forget_log.jsonl').open(encoding='utf-8')) if (self.data_dir / 'forget_log.jsonl').exists() else 0)} 条"
         )
 
+    # 太书面/太像 AI 的说法 → 口语替换（只做很少的几条，避免误伤）
+    STYLE_REWRITE = (
+        ("这个口子不能开", "这事不能松口"),
+        ("开这个口子", "通融这一回"),
+        ("开个口子", "通融一下"),
+        ("不能开这个口", "这事不能松口"),
+        ("把口子堵上", "以后不这样了"),
+        ("破例一次", "就这一次"),
+        ("我理解你的感受", "我知道你难受"),
+        ("你需要我做什么", "要我做点啥"),
+        ("我可以为你提供", "我能帮你"),
+        ("请告诉我更多", "再多说点"),
+    )
+
+    # 搭配错了的句子，用正则纠正（比字面表更灵活）
+    STYLE_REGEX = (
+        (r"课(?:要|如果)?是?不累", "要是课上得不累"),
+        (r"课(?:要|如果)?是?累(?![得的])", "要是课上得累"),
+        (r"回来还能剩(?:半个)?上午", "回来还能歇半天"),
+        (r"上午还能剩", "上午还能空出来"),
+        (r"作业吃(?:饱|饭)", "作业写完了"),
+        (r"上午很(?:开心|高兴)", "上午过得挺舒服"),
+    )
+
     # ---------- 出口清洗：去掉句尾句号 ----------
     @filter.on_decorating_result()
     async def _drop_period(self, event: AstrMessageEvent):
@@ -2763,6 +2859,14 @@ class MemoryLayersPlugin(Star):
                 if not isinstance(text, str) or "。" not in text:
                     continue
                 new = re.sub(r"。(?=\s*(?:\n|$))", "", text)
+                for _bad, _good in self.STYLE_REWRITE:
+                    if _bad in new:
+                        new = new.replace(_bad, _good)
+                for _pat, _rep in self.STYLE_REGEX:
+                    try:
+                        new = re.sub(_pat, _rep, new)
+                    except Exception:
+                        pass
                 if new != text:
                     try:
                         comp.text = new
