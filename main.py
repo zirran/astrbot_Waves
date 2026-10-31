@@ -1,18 +1,11 @@
-"""分层记忆 L1-L4 + 联想（v2）
-
-L1 最近十句：交给上下文
-L2 闲聊：便宜模型打分 + 一句话 + 自动标签，24 小时过期
-L3 重要的事：抽事实 + 标签，永久写进人格
-L4 全量原文：本地存档，可搜
-联想：记忆点之间按「标签重合 + 文本相似」连边，回复时按当前话题检索并扩展一跳
-"""
-
 from __future__ import annotations
 
 import asyncio
 import math
 import json
 import re
+import hashlib
+import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +15,8 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star, StarTools
 from astrbot.core.agent.message import TextPart
+from astrbot.core.message.message_event_result import MessageChain
+from astrbot.api.message_components import Plain
 
 DAY = 86400
 PROMPT_TAGS = ["主人", "家人", "朋友", "自己", "恋人", "工作", "上班", "加班", "面试", "学习", "考试", "论文", "毕业", "编程", "代码", "调试", "报错", "部署", "模型", "电脑", "手机", "游戏", "动漫", "抽卡", "番剧", "音乐", "歌", "电影", "视频", "小说", "吃饭", "午饭", "晚饭", "夜宵", "零食", "咖啡", "奶茶", "做饭", "外卖", "睡觉", "熬夜", "失眠", "生病", "感冒", "医院", "吃药", "运动", "跑步", "累", "钱", "工资", "花钱", "购物", "快递", "房租", "旅行", "打车", "天气", "开心", "难过", "委屈", "生气", "焦虑", "孤独"]
@@ -1602,6 +1597,15 @@ class MemoryLayersPlugin(Star):
         "好累": -0.7, "没意思": -0.5, "受不了": -0.8, "难受": -0.7, "emo": -0.6, "讨厌": -0.6,
     }
 
+    NEUTRAL_WORDS = ("还行", "还好", "一般", "凑合", "随便", "都可以", "无所谓", "就那样")
+    REPORT_WORDS = ("他说", "她说", "听说", "别人说", "有人说", "他们都", "她们都", "他老是", "她老是")
+    EMOJI_SENTI = {"😭": -0.8, "😢": -0.7, "🥲": -0.3, "😡": -0.8, "😞": -0.6,
+                   "😄": 0.7, "😊": 0.5, "🥰": 0.7, "😂": 0.45, "🙃": -0.1,
+                   "唉": -0.3, "哎": -0.2}
+    STRONG_TAIL = ("死了", "爆了", "极了", "坏了", "到爆", "得要命")
+    WEAKEN_TAIL = ("一点", "一点点", "一下", "些许")
+    CLAUSE_BOUND = "，,。！？!?；;…\n~～"
+
     # 含情绪字但不是那个意思的复合词
     EXCLUDE_COMPOUNDS = ("累积", "积累", "累计", "连累", "拖累", "麻烦", "烦请", "烦劳",
                          "开心果", "开心点", "爱心", "爱好", "热爱", "可爱", "怕生", "疼我")
@@ -1642,10 +1646,24 @@ class MemoryLayersPlugin(Star):
         except Exception:
             return {}
 
+    def _clause_bounds(self, t: str, idx: int):
+        start = 0
+        for i in range(idx - 1, -1, -1):
+            if t[i] in self.CLAUSE_BOUND:
+                start = i + 1
+                break
+        end = len(t)
+        for i in range(idx, len(t)):
+            if t[i] in self.CLAUSE_BOUND:
+                end = i
+                break
+        return start, end
+
     def _emotion_analysis(self, text: str) -> dict:
-        """情绪分析：按词命中、处理否定/程度/固定否定尾，返回 v/label/pos/neg。"""
+        """情绪分析 v3：分句作用域 + 转述降权 + 程度后缀 + emoji + 中性词。"""
         t = str(text or "")
-        empty = {"v": 0.0, "label": "", "pos": 0, "neg": 0, "n": 0, "words": []}
+        empty = {"v": 0.0, "label": "", "pos": 0, "neg": 0, "n": 0,
+                 "neutral": False, "reported": False}
         if not t:
             return empty
         hits = []
@@ -1653,40 +1671,65 @@ class MemoryLayersPlugin(Star):
             idx = t.find(word)
             while idx >= 0:
                 nxt = idx + len(word)
-                span = t[max(0, idx - 2): nxt + 2]
+                c_start, c_end = self._clause_bounds(t, idx)
+                clause = t[c_start:c_end]
+                span = t[max(c_start, idx - 2): min(len(t), nxt + 2)]
                 if any(x != word and x in span for x in self.EXCLUDE_COMPOUNDS):
                     idx = t.find(word, nxt)
                     continue
-                head = t[max(0, idx - 5): idx]
-                flip = (sum(1 for n in self.NEGATIONS if n in head) % 2 == 1)
-                tail = t[nxt: nxt + 3]
-                if any(tail.startswith(x) for x in self.NEG_TAILS):
+                head = t[max(c_start, idx - 6): idx]
+                near = head[-3:]
+                flip = False
+                if any(n in near for n in ("并没有", "没那么")):
+                    flip = True
+                elif any(n in near for n in ("不", "没", "别", "无", "未")):
+                    flip = True
+                if near.count("不") >= 2 or ("不是不" in head):
+                    flip = False
+                weaken = any(head.endswith(x) for x in ("不是很", "不太", "不怎么", "没那么"))
+                tail = t[nxt: min(len(t), nxt + 3)]
+                if tail.startswith(("不起来", "不了", "不下去", "不动")):
                     flip = not flip
                 scale = 1.0
                 for k, sc in self.INTENSIFY.items():
-                    if k in head[-3:]:
+                    if k in head:
                         scale = sc
                         break
-                val = base * scale * (-0.9 if flip else 1.0)
-                hits.append((word, val, base))
+                if any(tail.startswith(x) for x in self.STRONG_TAIL):
+                    scale *= 1.4
+                elif any(tail.startswith(x) for x in self.WEAKEN_TAIL):
+                    scale *= 0.7
+                if weaken:
+                    scale *= 0.55
+                report = any(r in clause for r in self.REPORT_WORDS)
+                val = base * scale * (-0.9 if flip else 1.0) * (0.45 if report else 1.0)
+                hits.append((word, val, base, report))
                 idx = t.find(word, nxt)
+
+        for ch, v in self.EMOJI_SENTI.items():
+            cnt = t.count(ch)
+            if cnt:
+                hits.append((ch, v * min(2, cnt), v, False))
+
+        neutral_word = any(n in t for n in self.NEUTRAL_WORDS)
+        reported = bool(hits) and all(h[3] for h in hits)
         if not hits:
-            return empty
-        pos = sum(v for _, v, _ in hits if v > 0)
-        neg = -sum(v for _, v, _ in hits if v < 0)
+            return {**empty, "neutral": neutral_word}
+
+        pos = sum(v for _, v, _, _ in hits if v > 0)
+        neg = -sum(v for _, v, _, _ in hits if v < 0)
         total = pos + neg
         v = ((pos - neg) / total) * min(1.0, total / 1.2) if total else 0.0
-        best_word, best_val, best_base = max(hits, key=lambda x: abs(x[1]))
-        if (best_val > 0) != (best_base > 0):
-            label = "正面" if best_val > 0 else "负面"
-        elif pos > 0 and neg > 0:
+        if neutral_word and total < 1.0:
+            v *= 0.5
+        best = max(hits, key=lambda x: abs(x[1]))
+        label = best[0] if (best[1] > 0) == (best[2] > 0) else ("正面" if best[1] > 0 else "负面")
+        if pos > 0 and neg > 0:
             label = "复杂"
-        else:
-            label = best_word
         return {"v": round(max(-1.0, min(1.0, v)), 2), "label": label,
-                "pos": sum(1 for _, x, _ in hits if x > 0),
-                "neg": sum(1 for _, x, _ in hits if x < 0),
-                "n": len(hits), "words": [w for w, _, _ in hits]}
+                "pos": sum(1 for _, x, _, _ in hits if x > 0),
+                "neg": sum(1 for _, x, _, _ in hits if x < 0),
+                "n": len(hits), "neutral": neutral_word, "reported": reported}
 
     def _query_valence(self, text: str) -> float:
         """这句话的情绪倾向（-1 ~ 1）。"""
@@ -1834,6 +1877,16 @@ class MemoryLayersPlugin(Star):
         query = (query or "").strip()
         if not query:
             return []
+        # 同一条查询 15 分钟内直接复用结果：省一次向量调用和一轮打分
+        _cache = getattr(self, "_qcache", None)
+        if _cache is None:
+            _cache = self._qcache = {}
+        _key = text_key(query)
+        _now = time.time()
+        _hit = _cache.get(_key)
+        if _hit and (_now - _hit[0]) < 900:
+            self._cache_hits = int(getattr(self, "_cache_hits", 0)) + 1
+            return [dict(x) for x in _hit[1]]
         await self.embed_texts([query])
         qvec = self.emb.get(text_key(query))
         await self._ensure_tag_vectors()
@@ -1858,6 +1911,13 @@ class MemoryLayersPlugin(Star):
                 if item["n"] % 8 == 0:
                     logger.debug(f"[Wave] topic {topic}: hit {rate:.0%}, sim floor {sim}")
             self._save_state()
+        except Exception:
+            pass
+        try:
+            _cache[_key] = (_now, [dict(x) for x in hits])
+            if len(_cache) > 200:
+                for _k in list(_cache.keys())[:-200]:
+                    _cache.pop(_k, None)
         except Exception:
             pass
         self._log_trace(query, hits)
@@ -2233,7 +2293,13 @@ class MemoryLayersPlugin(Star):
             elif sections.get(DIARY_TITLE):
                 parts.append(sections[DIARY_TITLE])
             new_prompt = "\n\n".join(p for p in parts if p).strip()
+            _h = hashlib.sha1(new_prompt.encode("utf-8")).hexdigest()[:16]
+            if _h == str(self.state.get("persona_hash") or ""):
+                self._last_sync = time.time()
+                return
             await self.context.persona_manager.update_persona(persona_id, system_prompt=new_prompt)
+            self.state["persona_hash"] = _h
+            self._save_state()
             self._last_sync = time.time()
             logger.debug(f"[记忆] 人格已更新：{len(self.l3)} 条长期记忆（{len(new_prompt)} 字）")
         except Exception as exc:
@@ -2378,6 +2444,118 @@ class MemoryLayersPlugin(Star):
 
     # ---------- injection ----------
     @filter.on_llm_request()
+    def _provider_stats(self, since: float = 0) -> dict:
+        """从 AstrBot 的 provider_stats 里读最近 20 次请求的缓存命中情况。"""
+        try:
+            db = Path(self.data_dir).parent.parent / "data_v4.db"
+            if not db.exists():
+                return {}
+            con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2)
+            try:
+                if since:
+                    rows = con.execute(
+                        "select token_input_cached, token_input_other from provider_stats "
+                        "where created_at > ? order by created_at desc", (since,)
+                    ).fetchall()
+                else:
+                    rows = con.execute(
+                        "select token_input_cached, token_input_other from provider_stats "
+                        "order by created_at desc limit 20"
+                    ).fetchall()
+            finally:
+                con.close()
+            cached = sum(int(r[0] or 0) for r in rows)
+            other = sum(int(r[1] or 0) for r in rows)
+            total = cached + other
+            if not rows or not total:
+                return {}
+            return {"cached": cached, "other": other, "n": len(rows),
+                    "hit": round(100.0 * cached / total, 1),
+                    "avg_in": int(total / len(rows))}
+        except Exception:
+            return {}
+
+    def _cache_plan(self) -> dict:
+        plan = self.state.get("cache_plan")
+        if not isinstance(plan, dict):
+            plan = {"chars": 240, "max": 4, "time": "auto",
+                    "trial": None, "best": None, "samples": 0, "log": []}
+            self.state["cache_plan"] = plan
+        for k, v in (("chars", 240), ("max", 4), ("time", "auto"), ("samples", 0)):
+            plan.setdefault(k, v)
+        return plan
+
+    def _cache_score(self, st: dict) -> float:
+        """命中率越高越好，平均输入越短越好。"""
+        if not st:
+            return 0.0
+        hit = float(st.get("hit") or 0) / 100.0
+        avg = float(st.get("avg_in") or 60000)
+        size = max(0.0, 1.0 - avg / 60000.0)
+        return round(hit * 0.55 + size * 0.45, 4)
+
+    def _cache_tune_tick(self) -> None:
+        """每 10 轮评估一次：命中率 ↑ 且输入 ↓ 的方案胜出，逐步逼近最优。"""
+        try:
+            plan = self._cache_plan()
+            plan["samples"] = int(plan.get("samples", 0)) + 1
+            if plan["samples"] % 10 != 0:
+                return
+            st = self._provider_stats(float(plan.get("mark") or 0))
+            if not st:
+                return
+            score = self._cache_score(st)
+            cur = {"chars": plan["chars"], "max": plan["max"], "time": plan["time"]}
+            plan["log"] = (plan.get("log") or [])[-9:] + [{
+                "t": datetime.now().strftime("%m-%d %H:%M"),
+                "hit": st["hit"], "avg_in": st["avg_in"], "score": score,
+                "chars": cur["chars"], "max": cur["max"], "time": cur["time"],
+            }]
+
+            trial = plan.get("trial")
+            if trial:
+                # 试用期结束：和基线比
+                base = plan.get("best") or {"score": -1}
+                if score > float(base.get("score", -1)):
+                    plan["best"] = {"score": score, **cur}
+                    logger.info(f"[Wave] 缓存调优：保留 chars={cur['chars']} max={cur['max']} time={cur['time']}"
+                                f"（命中 {st['hit']}%，均输入 {st['avg_in']}，score {score}）")
+                else:
+                    plan.update(trial["prev"])
+                    logger.info(f"[Wave] 缓存调优：回退到 chars={plan['chars']} max={plan['max']} "
+                                f"（新方案 score {score} 不如 {base.get('score')}）")
+                plan["trial"] = None
+                plan["mark"] = time.time()
+                self._save_state()
+                return
+
+            # 选一个还没试过的方向
+            order = plan.get("order") or ["chars-", "time-on", "max-", "chars+", "time-off", "max+"]
+            step = order.pop(0) if order else "chars-"
+            plan["order"] = order or ["chars-", "time-on", "max-", "chars+", "time-off", "max+"]
+            plan["best"] = plan.get("best") or {"score": score, **cur}
+            prev = dict(cur)
+            if step == "chars-" and cur["chars"] > 160:
+                plan["chars"] = cur["chars"] - 40
+            elif step == "chars+" and cur["chars"] < 400:
+                plan["chars"] = cur["chars"] + 40
+            elif step == "max-" and cur["max"] > 2:
+                plan["max"] = cur["max"] - 1
+            elif step == "max+" and cur["max"] < 6:
+                plan["max"] = cur["max"] + 1
+            elif step == "time-on" and cur["time"] != "on":
+                plan["time"] = "on"
+            elif step == "time-off" and cur["time"] != "off":
+                plan["time"] = "off"
+            else:
+                plan["chars"] = max(160, cur["chars"] - 40)
+            plan["mark"] = time.time()
+            plan["trial"] = {"step": step, "prev": prev}
+            self._save_state()
+            logger.info(f"[Wave] 缓存调优：试 {step} → chars={plan['chars']} max={plan['max']} time={plan['time']}")
+        except Exception as exc:
+            logger.debug(f"[Wave] 缓存调优跳过: {exc}")
+
     async def inject(self, event: AstrMessageEvent, req: ProviderRequest):
         try:
             umo = str(getattr(event, "unified_msg_origin", "") or "")
@@ -2414,12 +2592,15 @@ class MemoryLayersPlugin(Star):
                     asyncio.create_task(self._remember_on_demand(query))
             if query:
                 await asyncio.to_thread(self.reinforce_mentions, query)
-            qval = self._query_valence(query)
             _plain = "".join(ch for ch in query if not ch.isspace())
             _skip = len(_plain) <= 3 or _plain.lower() in SHORT_ACK
+            qval = 0.0 if _skip else self._query_valence(query)
             hits = [] if _skip else (await self.retrieve_async(query) if query else [])
             try:
                 st = self.state.setdefault("recall_stats", {"n": 0, "hit": 0, "empty": 0, "avg": 0})
+                _ch = int(getattr(self, "_cache_hits", 0))
+                if _ch:
+                    st["cache_hit"] = _ch
                 st["n"] = int(st.get("n", 0)) + 1
                 if hits:
                     st["hit"] = int(st.get("hit", 0)) + 1
@@ -2436,6 +2617,7 @@ class MemoryLayersPlugin(Star):
                     self.state["score_floor"] = cur
                     self._save_state()
                     logger.info(f"[Wave] score floor -> {cur} (hit {hit_rate:.0%}, avg {st.get('avg')})")
+                self._cache_tune_tick()
                 if st["n"] % 100 == 0:
                     rate = round(100.0 * st["hit"] / max(1, st["n"]), 1)
                     logger.debug(f"[Wave] recall stats: {st['hit']}/{st['n']} hit ({rate}%), avg {st['avg']} items")
@@ -2447,7 +2629,7 @@ class MemoryLayersPlugin(Star):
                 recent = [n for n in self.l2 if n.get("expires_at", 0) > now][-4:]
                 if not recent:
                     return
-                block = "\n\n" + self._now_line() + self._relationship_line() + "【最近聊过的】\n" + "\n".join(f"· [{self._day_label(n.get('ts'))}] {n['summary']}" for n in recent) + "\n"
+                block = "\n\n" + (self._now_line() if self._cache_plan().get("time") != "off" else "") + self._relationship_line() + "【最近聊过的】\n" + "\n".join(f"· [{self._day_label(n.get('ts'))}] {n['summary']}" for n in recent) + "\n"
             else:
                 lines = []
                 for hit in hits:
@@ -2461,10 +2643,11 @@ class MemoryLayersPlugin(Star):
                     _when = self._short_when(hit.get("ts"))
                     _wtxt = "" if (not _when or _when == "今天") else (_when + " ")
                     lines.append(f"{mark}[{prefix}]{tag}{_wtxt}{_txt[:50]}")
-                _cap = self._int("recall_inject_max", 5, 2)
+                _plan = self._cache_plan()
+                _cap = max(2, min(6, int(_plan.get("max", 4))))
                 if len(lines) > 1 and float(hits[0].get("score") or 0) >= 3.0:
                     _cap = min(_cap, 3)
-                _budget = int(self.cfg("recall_inject_chars", 300) or 300)
+                _budget = max(140, min(420, int(_plan.get("chars", 240))))
                 _picked_lines, _used = [], 0
                 for _ln in lines:
                     if _used + len(_ln) > _budget and _picked_lines:
@@ -2474,7 +2657,7 @@ class MemoryLayersPlugin(Star):
                     if len(_picked_lines) >= _cap:
                         break
                 lines = _picked_lines
-                block = ("\n\n" + self._now_line() + self._relationship_line() + "【联想记忆｜下面是记忆要点，不是台词：只取事实，用你自己的话说；只在相关时引用一条，不相关就忽略】\n"
+                block = ("\n\n" + (self._now_line() if _plan.get("time") != "off" else "") + self._relationship_line() + "【联想记忆｜下面是记忆要点，不是台词：只取事实，用你自己的话说；只在相关时引用一条，不相关就忽略】\n"
                          + "\n".join(lines[:_cap]) + "\n")
                 mood = self._mood_trend()
                 if mood and abs(mood.get("avg", 0)) >= 0.15:
@@ -2484,7 +2667,8 @@ class MemoryLayersPlugin(Star):
                         block += f"，多次出现「{mood['label']}」"
                     block += "。说话时顺着这个气氛，别硬转话题，也别主动提起情绪本身。\n"
                 _ea = self._emotion_analysis(query)
-                if _ea["neg"] >= 2 and _ea["v"] <= -0.55:
+                if (_ea["neg"] >= 2 and _ea["v"] <= -0.55
+                        and not _ea.get("neutral") and not _ea.get("reported")):
                     block += "【他现在的状态】情绪很沉。先接住，别给建议、别分析原因、别问为什么，一句话就够。\n"
                 elif _ea["pos"] >= 2 and _ea["v"] >= 0.55:
                     block += "【他现在的状态】心情不错，顺着他的劲儿聊，别扫兴。\n"
@@ -2496,6 +2680,18 @@ class MemoryLayersPlugin(Star):
                 guess = self.inference(hits)
                 if guess:
                     block += f"【推断】{guess}\n"
+            try:
+                _ist = self.state.setdefault("inject_stats", {"n": 0, "chars": 0})
+                _ist["n"] = int(_ist.get("n", 0)) + 1
+                _ist["chars"] = int(_ist.get("chars", 0)) + len(block)
+                if _ist["n"] % 30 == 0:
+                    logger.info(
+                        f"[Wave] inject avg {int(_ist['chars']) / max(1, _ist['n']):.0f} chars/turn "
+                        f"（{_ist['n']} 轮），补全检索缓存命中 {getattr(self, '_cache_hits', 0)} 次"
+                    )
+                self.state["cache_hits"] = int(getattr(self, "_cache_hits", 0))
+            except Exception:
+                pass
             try:
                 part = TextPart(text=block).mark_as_temp()
                 parts = getattr(req, "extra_user_content_parts", None)
@@ -2847,6 +3043,18 @@ class MemoryLayersPlugin(Star):
     )
 
     # ---------- 出口清洗：去掉句尾句号 ----------
+    async def _send_parts(self, event, parts):
+        """把剩下的段落一条条补发（首条由主流程发）。"""
+        try:
+            await asyncio.sleep(1.2)
+            for seg in (parts or [])[:3]:
+                if not seg:
+                    continue
+                await event.send(MessageChain([Plain(seg)]))
+                await asyncio.sleep(0.8)
+        except Exception as exc:
+            logger.debug(f"[Wave] 分段发送失败: {exc}")
+
     @filter.on_decorating_result()
     async def _drop_period(self, event: AstrMessageEvent):
         try:
@@ -2865,6 +3073,14 @@ class MemoryLayersPlugin(Star):
                 for _pat, _rep in self.STYLE_REGEX:
                     try:
                         new = re.sub(_pat, _rep, new)
+                    except Exception:
+                        pass
+                # 有空行分段 → 拆成多条消息发，而不是一条里带空行
+                parts = [x.strip() for x in re.split(r"\n\s*\n+", new) if x.strip()]
+                if len(parts) > 1 and bool(self.cfg("split_paragraphs", True)):
+                    new = parts[0]
+                    try:
+                        asyncio.create_task(self._send_parts(event, parts[1:]))
                     except Exception:
                         pass
                 if new != text:
@@ -2898,7 +3114,12 @@ class MemoryLayersPlugin(Star):
             f"L3 {len(active)} 条（下沉 {len(parked)}）\n"
             f"L4 {total} 句 / {len(files)} 天 · 日记 {len(self.diary_entries)} 篇（上篇 {last}）\n"
             f"联想图 {len(self._graph.get('nodes') or [])} 点 / {len(self._graph.get('links') or [])} 边 · "
-            f"标签 {len(getattr(self, '_tag_index', {}) or {})} 个"
+            f"标签 {len(getattr(self, '_tag_index', {}) or {})} 个\n"
+            f"注入 {(int((self.state.get('inject_stats') or {}).get('chars', 0)) / max(1, int((self.state.get('inject_stats') or {}).get('n', 1)))):.0f} 字/轮 · "
+            f"检索缓存命中 {self.state.get('cache_hits', 0)} 次\n"
+            f"提示词缓存 {self._provider_stats().get('hit', '-')}% · "
+            f"调优 chars={self._cache_plan().get('chars')} max={self._cache_plan().get('max')} "
+            f"time={self._cache_plan().get('time')}"
         )
 
     @filter.command("日记")

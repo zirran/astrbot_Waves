@@ -68,6 +68,14 @@ body.aside-collapsed aside>*{display:none}
 #panelBtns button{width:30px;height:30px;border:1px solid rgba(79,240,255,.3);background:rgba(10,20,36,.85);color:var(--ink);font:700 13px/1 ui-monospace,monospace;cursor:pointer;padding:0}
 #panelBtns button:hover{background:rgba(79,240,255,.18);color:#eafcff}
 #panelBtns button.on{border-color:#4ff0ff;color:#4ff0ff;box-shadow:0 0 12px rgba(79,240,255,.35)}
+#q{position:absolute;left:14px;top:56px;width:190px;z-index:8;background:rgba(8,16,30,.9);border:1px solid rgba(79,240,255,.3);color:#d9e8ff;font:12px/1.4 "Microsoft YaHei",sans-serif;padding:6px 9px;outline:none}
+#q:focus{border-color:#4ff0ff;box-shadow:0 0 12px rgba(79,240,255,.25)}
+#q::placeholder{color:rgba(140,170,210,.6)}
+#btnShot{position:absolute;left:212px;top:56px;z-index:8;height:30px;width:32px;background:rgba(8,16,30,.9);border:1px solid rgba(79,240,255,.3);color:#d9e8ff;cursor:pointer}
+#btnShot:hover{background:rgba(79,240,255,.16);color:#eafcff}
+#tip{position:absolute;pointer-events:none;display:none;z-index:20;max-width:280px;background:rgba(6,12,24,.94);border:1px solid rgba(79,240,255,.35);color:#cfe3ff;font:11.5px/1.6 "Microsoft YaHei",sans-serif;padding:7px 9px;box-shadow:0 6px 20px rgba(0,0,0,.5)}
+#tip b{color:#4ff0ff;font-weight:700}
+@media (max-width:900px){#q,#btnShot{display:none}}
 </style>
 </head>
 <body>
@@ -84,7 +92,9 @@ body.aside-collapsed aside>*{display:none}
 <main>
   <div id="stage">
     <canvas id="sky"></canvas>
-    <div id="timebar">
+    <input id="q" placeholder="搜记忆 / 标签…" autocomplete="off">
+<button id="btnShot" title="导出 PNG">⤓</button>
+<div id="timebar">
       <button data-cut="3600">1 小时</button>
       <button data-cut="21600">6 小时</button>
       <button data-cut="86400">24 小时</button>
@@ -92,7 +102,7 @@ body.aside-collapsed aside>*{display:none}
     </div>
     <div id="err"></div>
     <div id="zoomBar"><button id="zin">+</button><button id="zout">−</button><button id="zreset">⟲</button></div>
-<div id="panelBtns"><button id="btnRot" title="自动旋转">⟳</button><button id="btnTree" title="收起/展开记忆脉络">▾</button><button id="btnAside" title="收起/展开右侧栏">⟩</button></div>
+<div id="panelBtns"><button id="btnRot" title="自动旋转">⟳</button><button id="btnTree" title="收起/展开记忆脉络">▾</button><button id="btnAside" title="收起/展开右侧栏">⟩</button><button id="btnGroup" title="按标签分类 / 均匀铺开">⌗</button></div>
     <div id="legend">
       <span><i style="background:#161616"></i>L3 长期</span>
       <span><i style="background:#9aa4b2"></i>L2 近期</span>
@@ -106,7 +116,8 @@ body.aside-collapsed aside>*{display:none}
       <div id="treeTip"><b>记忆脉络</b> · 横轴是时间（左下「早了」→ 右下「最近」）；每根竖线 = 你说的一句话，高度 = 这句话想起的记忆条数；点光点回放（青色 = 当前查看的那次）</div>
     </div>
   </div>
-  <aside>
+  <div id="tip"></div>
+<aside>
     <div class="head"><span class="eyebrow">Detail</span><b>记忆详情</b></div>
     <div id="detail"><p class="empty">拖动画布旋转 · 滚轮或 + 放大 · 左上角可按时间筛选 · 点星看详情</p></div>
   </aside>
@@ -122,12 +133,19 @@ body.aside-collapsed aside>*{display:none}
   var cv = document.getElementById('sky'), ctx = cv.getContext('2d');
   var W = 0, H = 0, DPR = Math.min(2, window.devicePixelRatio || 1);
   var nodes = [], links = [], byId = {};
-  var yaw = 0.7, pitch = -0.22, zoom = 1.0, fitScale = 1, fitOx = 0, fitOy = 0;
+  window.clusterMode = (typeof window.clusterMode === 'boolean') ? window.clusterMode : true;
+  window.lastMem = null;
+  var yaw = 0.7, pitch = -0.62, zoom = 1.0, fitScale = 1, fitOx = 0, fitOy = 0;
   var dragging = false, moved = 0, lastX = 0, lastY = 0, vx = 0, vy = 0;
   var selected = null, hovered = null;
   var frames = 0, fps = 0, lastFpsT = performance.now();
   var waves = [], pickedWave = -1, highlight = {};
   var cutoff = 0;
+  var zoomTarget = 1.0;
+  var fitScaleTarget = 1;
+  var fitCx = 0, fitCy = 0;
+  var query = "";
+  var tipEl = document.getElementById("tip");
 
   function resize() {
     var r = cv.getBoundingClientRect();
@@ -147,18 +165,30 @@ body.aside-collapsed aside>*{display:none}
     return { x: W / 2 + x1 * k, y: H / 2 + y1 * k, k: k, z: z2 };
   }
   function computeFit() {
-    if (!nodes.length || !W) { fitScale = 1; return; }
-    var sum = 0;
+    if (!nodes.length || !W) { fitScale = fitScaleTarget = 1; return; }
+    var minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
     for (var i = 0; i < nodes.length; i++) {
       var p = project(nodes[i], 1, yaw, pitch);
-      sum += Math.hypot(p.x - W / 2, p.y - H / 2);
+      if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
     }
-    var meanR = Math.max(20, sum / nodes.length);
-    fitScale = Math.max(1, Math.min(10, Math.min(W, H) * 0.52 / meanR));
+    // 以原点为中心缩放（不再按包围盒中心平移），旋转时才是“绕自己转”
+    var maxR2 = 0;
+    for (var ii = 0; ii < nodes.length; ii++) {
+      var pp2 = project(nodes[ii], 1, yaw, pitch);
+      maxR2 = Math.max(maxR2, Math.hypot(pp2.x - W / 2, pp2.y - H / 2));
+    }
+    fitScaleTarget = Math.max(0.4, Math.min(14, Math.min(W, H) * 0.46 / Math.max(30, maxR2)));
+    fitCx = 0; fitCy = 0;
+    if (!isFinite(fitScale) || fitScale <= 0) fitScale = fitScaleTarget;
   }
   function screenOf(n) {
     var p = project(n, zoom, yaw, pitch);
-    return { x: W / 2 + (p.x - W / 2) * fitScale, y: H / 2 + (p.y - H / 2) * fitScale, k: p.k, z: p.z };
+    return {
+      x: W / 2 + (p.x - W / 2 - fitCx) * fitScale,
+      y: H / 2 + (p.y - H / 2 - fitCy) * fitScale,
+      k: p.k, z: p.z
+    };
   }
   function ageText(ts) {
     if (!ts) return '时间未知';
@@ -188,10 +218,29 @@ body.aside-collapsed aside>*{display:none}
     var nowMs = performance.now();
     if (nowMs - lastFpsT > 500) { fps = Math.round(frames * 1000 / (nowMs - lastFpsT)); frames = 0; lastFpsT = nowMs; }
     var tsec = nowMs / 1000;
+
     ctx.clearRect(0, 0, W, H);
 
+    // 平滑缩放
+    zoom += (zoomTarget - zoom) * 0.14;
+    // 位置过渡（切换分类/重布局时）
+    for (var li = 0; li < nodes.length; li++) {
+      var ln = nodes[li];
+      if (ln.tx !== undefined) {
+        ln.x += (ln.tx - ln.x) * 0.12;
+        ln.y += (ln.ty - ln.y) * 0.12;
+        ln.z += (ln.tz - ln.z) * 0.12;
+      }
+      ln.fade = Math.min(1, (ln.fade || 0) + 0.07);
+    }
+
     if (!dragging) {
-      yaw += vx; pitch += vy; vx *= 0.94; vy *= 0.94;
+      yaw += vx; pitch += vy;
+      vx *= 0.988; vy *= 0.980;
+      if (Math.abs(vx) < 0.0002) vx = 0;
+      if (Math.abs(vy) < 0.0002) vy = 0;
+      vx = Math.max(-0.08, Math.min(0.08, vx));
+      vy = Math.max(-0.05, Math.min(0.05, vy));
       if (window.autoRotate) yaw += 0.0022;
       pitch = Math.max(-1.45, Math.min(1.45, pitch));
     }
@@ -203,12 +252,35 @@ body.aside-collapsed aside>*{display:none}
       vis.push(n);
       proj[n.id] = screenOf(n);
     }
-    if (vis.length) {
-      var mx = 0, my = 0;
-      for (i = 0; i < vis.length; i++) { mx += proj[vis[i].id].x; my += proj[vis[i].id].y; }
-      mx /= vis.length; my /= vis.length;
-      fitOx = W / 2 - mx; fitOy = H / 2 - my;
-      for (i = 0; i < vis.length; i++) { proj[vis[i].id].x += fitOx; proj[vis[i].id].y += fitOy; }
+    fitScale += (fitScaleTarget - fitScale) * 0.10;
+    if (Math.abs(fitScaleTarget - fitScale) < 0.002) fitScale = fitScaleTarget;
+
+    // 同心环参考线（和图上的点一一对应）
+    if (window.clusterMode) {
+      var RG = [[0.24, 'L1 原话'], [0.52, 'L3 长期'], [0.78, 'L2 近期'], [0.94, 'L4 档案'], [1.0, '日记']];
+      for (var gi2 = 0; gi2 < RG.length; gi2++) {
+        var rrG = RG[gi2][0] * 300;
+        ctx.beginPath();
+        for (var aG = 0; aG <= 72; aG++) {
+          var thG = (aG / 72) * Math.PI * 2;
+          var vxG = Math.cos(thG) * rrG;
+          var vyG = Math.sin(thG * 2) * rrG * 0.10;
+          var vzG = Math.sin(thG) * rrG;
+          var cyG = Math.cos(yaw), syG = Math.sin(yaw);
+          var x1G = vxG * cyG - vzG * syG, z1G = vxG * syG + vzG * cyG;
+          var cpG = Math.cos(pitch), spG = Math.sin(pitch);
+          var y1G = vyG * cpG - z1G * spG, z2G = vyG * spG + z1G * cpG;
+          var kG = 900 / (900 + z2G * zoom + 340);
+          var pxG = W / 2 + x1G * kG * zoom * fitScale;
+          var pyG = H / 2 + y1G * kG * zoom * fitScale;
+          if (aG === 0) ctx.moveTo(pxG, pyG); else ctx.lineTo(pxG, pyG);
+        }
+        ctx.strokeStyle = gi2 === 1 ? 'rgba(79,240,255,.22)' : 'rgba(79,240,255,.12)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 7]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
     }
 
     var segs = [];
@@ -237,9 +309,13 @@ body.aside-collapsed aside>*{display:none}
       n = order[i];
       var pp = proj[n.id];
       var depthK = Math.max(0.35, Math.min(1.3, pp.k));
-      var r = n.r * 1.18 * depthK * (n === hovered ? 1.9 : 1) * (n === selected ? 1.55 : 1);
+      var br = 1;
+      var fa = (n.fade === undefined) ? 1 : n.fade;
+      var r = n.r * 1.18 * depthK * br * (0.55 + 0.45 * fa) * (n === hovered ? 1.9 : 1) * (n === selected ? 1.55 : 1);
       var tw = 0.85 + 0.15 * Math.sin(tsec * 1.6 + (i * 1.7) % 6.28);
-      var al = Math.max(0.55, Math.min(1, (0.62 + pp.k * 0.42) * tw));
+      var al = Math.max(0.55, Math.min(1, (0.62 + pp.k * 0.42) * tw)) * fa;
+      var _hit = !query || (n.text || "").indexOf(query) >= 0 || (n.tags || []).join(" ").indexOf(query) >= 0;
+      if (!_hit) al *= 0.12;
       ctx.beginPath();
       ctx.arc(pp.x, pp.y, Math.max(1.1, r), 0, Math.PI * 2);
       var glow = '#4ff0ff';
@@ -298,6 +374,28 @@ body.aside-collapsed aside>*{display:none}
     try { drawTree(); } catch (e) {}
   };
 
+
+  // 按钮状态实时同步（不管从哪改的）
+  function syncBtnStates() {
+    var r = document.getElementById('btnRot');
+    var g = document.getElementById('btnGroup');
+    var t = document.getElementById('btnTree');
+    var a = document.getElementById('btnAside');
+    if (r) r.classList.toggle('on', !!window.autoRotate);
+    if (g) g.classList.toggle('on', localStorage.getItem('wave.cluster') !== '0');
+    if (t) {
+      var tc = document.body.classList.contains('tree-collapsed');
+      t.classList.toggle('on', !tc);
+      t.textContent = tc ? '▸' : '▾';
+    }
+    if (a) {
+      var ac = document.body.classList.contains('aside-collapsed');
+      a.textContent = ac ? '⟨' : '⟩';
+    }
+  }
+  setInterval(syncBtnStates, 250);
+  setTimeout(function () { try { resize(); } catch (e) {} }, 350);
+  setTimeout(function () { try { computeFit(); } catch (e) {} }, 900);
   requestAnimationFrame(frame);
   }
 
@@ -367,7 +465,7 @@ body.aside-collapsed aside>*{display:none}
       moved += Math.abs(dx) + Math.abs(dy);
       yaw += dx * 0.008;
       pitch = Math.max(-1.45, Math.min(1.45, pitch + dy * 0.006));
-      vx = dx * 0.0009; vy = dy * 0.0006;
+      vx = dx * 0.0024; vy = dy * 0.0014;
       lastX = e.clientX; lastY = e.clientY;
     } else {
       var r = cv.getBoundingClientRect();
@@ -390,11 +488,11 @@ body.aside-collapsed aside>*{display:none}
   window.addEventListener('pointerup', onUp, { passive: true });
   cv.addEventListener('wheel', function (e) {
     e.preventDefault();
-    zoom = Math.max(0.1, Math.min(60, zoom * (e.deltaY > 0 ? 0.9 : 1.11)));
+    zoomTarget = Math.max(0.1, Math.min(60, zoomTarget * (e.deltaY > 0 ? 0.9 : 1.11)));
   }, { passive: false });
-  document.getElementById('zin').onclick = function () { zoom = Math.min(60, zoom * 1.22); };
-  document.getElementById('zout').onclick = function () { zoom = Math.max(0.1, zoom / 1.22); };
-  document.getElementById('zreset').onclick = function () { zoom = 1.0; yaw = 0.7; pitch = -0.22; computeFit(); };
+  document.getElementById('zin').onclick = function () { zoomTarget = Math.min(60, zoomTarget * 1.25); };
+  document.getElementById('zout').onclick = function () { zoomTarget = Math.max(0.1, zoomTarget / 1.25); };
+  document.getElementById('zreset').onclick = function () { zoomTarget = 1.0; yaw = 0.7; pitch = -0.62; computeFit(); };
 
   document.addEventListener('click', function (ev) {
     var btn = ev.target && ev.target.closest ? ev.target.closest('#timebar button') : null;
@@ -569,6 +667,10 @@ body.aside-collapsed aside>*{display:none}
   });
 
   function build(mem) {
+    window.lastMem = mem;
+    var useCluster = true;
+    try { useCluster = (localStorage.getItem('wave.cluster') !== '0'); } catch (e) {}
+
     var g = (mem && mem.graph) || { nodes: [], links: [] };
     var facts = (mem && mem.facts) || [];
     var notes = (mem && mem.notes) || [];
@@ -578,28 +680,80 @@ body.aside-collapsed aside>*{display:none}
     document.getElementById('sNew').textContent = recent;
     document.getElementById('sLinks').textContent = (g.links || []).length;
 
+    var oldPos = {};
+    for (var oi = 0; oi < nodes.length; oi++) { oldPos[nodes[oi].id] = { x: nodes[oi].x, y: nodes[oi].y, z: nodes[oi].z }; }
     nodes = []; byId = {}; links = [];
     var list = g.nodes || [];
     var total = list.length || 1;
     var golden = Math.PI * (3 - Math.sqrt(5));
+    // 按「主标签 + 类型」分组：同类的记忆聚成一小团，整体更分散
+    // 同心环：按层级分圈，圈内按标签排序，位置固定不漂移
+    var RING = { recent: 0.24, fact: 0.52, note: 0.78, archive: 0.94, diary: 1.0 };
+    var BASE_R = 300;
+    window.__spiralMax = BASE_R;
+
+    function ringOf(n) {
+      if (n.sub === 'diary') return 'diary';
+      if (n.kind === 'recent') return 'recent';
+      if (n.kind === 'archive') return 'archive';
+      if (n.kind === 'fact') return 'fact';
+      return 'note';
+    }
+
+    var buckets = { recent: [], fact: [], note: [], archive: [], diary: [] };
+    for (var bi = 0; bi < list.length; bi++) buckets[ringOf(list[bi])].push(list[bi]);
+
+    var posOf = {};
+    for (var rk in buckets) {
+      var arrB = buckets[rk];
+      arrB.sort(function (a, b) {
+        var ta = (a.tags && a.tags[0]) || '~', tb = (b.tags && b.tags[0]) || '~';
+        if (ta !== tb) return ta < tb ? -1 : 1;
+        return (a.ts || 0) - (b.ts || 0);
+      });
+      var nb = Math.max(1, arrB.length);
+      for (var ai = 0; ai < arrB.length; ai++) {
+        var angB = (ai / nb) * Math.PI * 2 - Math.PI / 2;
+        posOf[arrB[ai].id] = { ang: angB, ring: rk };
+      }
+    }
+
     for (var i = 0; i < list.length; i++) {
       var n = list[i];
-      var yy = 1 - (i / Math.max(1, total - 1)) * 2;
-      var rad = Math.sqrt(Math.max(0, 1 - yy * yy));
-      var theta = golden * i;
       var st = (typeof n.strength === 'number') ? n.strength : 0.5;
-      var shell, r;
-      if (n.kind === 'recent') { shell = 52; r = 3.2; }
-      else if (n.kind === 'fact') { shell = 95 + (1 - st) * 30; r = 3.4 + st * 2.4; }
-      else if (n.sub === 'diary') { shell = 320; r = 6.0; }
-      else if (n.kind === 'archive') { shell = 250; r = 5.0; yy = ((i % 5) - 2) * 0.34; rad = Math.sqrt(Math.max(0, 1 - yy * yy)); }
-      else { shell = 400 - st * 300; r = 1.6 + st * 2.4; }
+      var r;
+      if (n.kind === 'recent') { r = 3.6; }
+      else if (n.kind === 'fact') { r = 4.0 + st * 2.6; }
+      else if (n.sub === 'diary') { r = 6.4; }
+      else if (n.kind === 'archive') { r = 5.4; }
+      else { r = 2.2 + st * 2.6; }
+
       var el = {
         id: n.id, kind: n.kind, sub: n.sub || '', text: n.text || '', tags: n.tags || [],
         score: n.score, hits: n.hits, ts: n.ts || 0, exp: n.exp || 0,
-        emotion: n.emotion || {}, count: n.count, strength: st,
-        x: Math.cos(theta) * rad * shell, y: yy * shell * 0.85, z: Math.sin(theta) * rad * shell, r: r
+        emotion: n.emotion || {}, count: n.count, strength: st, r: r,
+        phase: 0, fade: 0
       };
+
+      if (window.clusterMode) {
+        var lay = posOf[n.id] || { ang: 0, ring: 'note' };
+        var rr2 = (RING[lay.ring] || 0.78) * BASE_R;
+        el.x = Math.cos(lay.ang) * rr2;
+        el.y = Math.sin(lay.ang * 2) * rr2 * 0.10;
+        el.z = Math.sin(lay.ang) * rr2;
+      } else {
+        var yy = 1 - (i / Math.max(1, total - 1)) * 2;
+        var rad = Math.sqrt(Math.max(0, 1 - yy * yy));
+        var theta = golden * i;
+        el.x = Math.cos(theta) * rad * 280;
+        el.y = yy * 280 * 0.85;
+        el.z = Math.sin(theta) * rad * 280;
+      }
+
+      el.tx = el.x; el.ty = el.y; el.tz = el.z;
+      var _old = oldPos[el.id];
+      if (_old) { el.x = _old.x; el.y = _old.y; el.z = _old.z; el.fade = 1; }
+      else { el.x *= 0.4; el.y *= 0.4; el.z *= 0.4; el.fade = 0; }
       nodes.push(el); byId[el.id] = el;
     }
     for (var j = 0; j < (g.links || []).length; j++) {
@@ -612,6 +766,7 @@ body.aside-collapsed aside>*{display:none}
     drawTree();
   }
 
+  window.__waveBuild = function (mem) { try { build(mem); } catch (e) {} };
   window.__dbg = { nodes: function () { return nodes; }, state: function () { return { zoom: zoom, fit: fitScale }; }, setZoom: function (z) { zoom = z; } };
 
   function refresh() {
@@ -621,6 +776,60 @@ body.aside-collapsed aside>*{display:none}
   }
 
   resize();
+
+  // ---------- 搜索过滤 ----------
+  var qEl = document.getElementById('q');
+  if (qEl) {
+    qEl.addEventListener('input', function () { query = (qEl.value || '').trim(); });
+    qEl.addEventListener('keydown', function (e) { if (e.key === 'Escape') { qEl.value = ''; query = ''; qEl.blur(); } });
+  }
+
+  // ---------- 导出 PNG ----------
+  var shotBtn = document.getElementById('btnShot');
+  if (shotBtn) {
+    shotBtn.addEventListener('click', function () {
+      try {
+        var o = document.createElement('canvas');
+        o.width = cv.width; o.height = cv.height;
+        var oc = o.getContext('2d');
+        var g = oc.createLinearGradient(0, 0, 0, o.height);
+        g.addColorStop(0, '#050810'); g.addColorStop(0.6, '#070c16'); g.addColorStop(1, '#04070d');
+        oc.fillStyle = g; oc.fillRect(0, 0, o.width, o.height);
+        oc.drawImage(cv, 0, 0);
+        var a = document.createElement('a');
+        a.download = '记忆星图-' + new Date().toISOString().slice(0, 10) + '.png';
+        a.href = o.toDataURL('image/png');
+        a.click();
+      } catch (e) { showErr('导出失败：' + e.message); }
+    });
+  }
+
+  // ---------- 悬浮提示 ----------
+  cv.addEventListener('pointermove', function (e) {
+    if (!tipEl) return;
+    if (!hovered) { tipEl.style.display = 'none'; return; }
+    var d = new Date((hovered.ts || 0) * 1000);
+    var when = hovered.ts ? (d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2)) : '时间未知';
+    var tags = (hovered.tags || []).slice(0, 3).map(function (t) { return '<b>#' + t + '</b>'; }).join(' ');
+    tipEl.innerHTML = '<div>' + (hovered.text || '').slice(0, 70) + '</div>' +
+      '<div style="color:#7d92b6;margin-top:3px">' + when + ' ' + tags + '</div>';
+    tipEl.style.display = 'block';
+    var box = cv.getBoundingClientRect();
+    var tx = e.clientX - box.left + 14, ty = e.clientY - box.top + 12;
+    if (tx + 300 > box.width) tx = box.width - 300;
+    tipEl.style.left = Math.max(4, tx) + 'px';
+    tipEl.style.top = Math.max(4, ty) + 'px';
+  });
+  cv.addEventListener('pointerleave', function () { if (tipEl) tipEl.style.display = 'none'; });
+
+  // ---------- 快捷键 ----------
+  document.addEventListener('keydown', function (e) {
+    if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+    if (e.code === 'Space') { e.preventDefault(); window.autoRotate = !window.autoRotate; }
+    else if (e.key === '+' || e.key === '=') { zoomTarget = Math.min(60, zoomTarget * 1.2); }
+    else if (e.key === '-' || e.key === '_') { zoomTarget = Math.max(0.1, zoomTarget / 1.2); }
+    else if (e.key === 'f' || e.key === 'F') { zoomTarget = 1.0; computeFit(); }
+  });
   requestAnimationFrame(frame);
   refresh();
   setInterval(refresh, 10000);
@@ -684,7 +893,9 @@ body.aside-collapsed aside>*{display:none}
     window.addEventListener('error', function (e) { window.__errs.push(String(e.message)); });
     setTimeout(function () {
       try {
-        ['btnRot', 'btnTree', 'btnAside'].forEach(function (id) {
+        var qq = document.getElementById('q');
+        if (qq) { qq.value = '睡觉'; qq.dispatchEvent(new Event('input')); }
+        ['btnRot', 'btnTree', 'btnAside', 'btnGroup'].forEach(function (id) {
           var b = document.getElementById(id);
           if (b) b.click();
         });
@@ -697,6 +908,26 @@ body.aside-collapsed aside>*{display:none}
       }
     }, 1200);
   }
+
+  // ---------- 分类 / 铺开 切换 ----------
+  (function () {
+    var btn = document.getElementById('btnGroup');
+    if (!btn) return;
+    try {
+      var saved = localStorage.getItem('wave.cluster');
+      if (saved === '0') window.clusterMode = false;
+    } catch (e) {}
+    function paint() { btn.classList.toggle('on', window.clusterMode); }
+    paint();
+    btn.addEventListener('click', function () {
+      var now = true;
+      try { now = (localStorage.getItem('wave.cluster') !== '0'); } catch (e) {}
+      var next = !now;
+      try { localStorage.setItem('wave.cluster', next ? '1' : '0'); } catch (e) {}
+      btn.classList.toggle('on', next);
+      if (window.lastMem && window.__waveBuild) { window.__waveBuild(window.lastMem); }
+    });
+  })();
 </script>
 </body>
 </html>
