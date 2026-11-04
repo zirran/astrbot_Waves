@@ -16,7 +16,7 @@ from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star, StarTools
 from astrbot.core.agent.message import TextPart
 from astrbot.core.message.message_event_result import MessageChain
-from astrbot.api.message_components import Plain
+from astrbot.api.message_components import Image, Plain
 
 DAY = 86400
 PROMPT_TAGS = ["主人", "家人", "朋友", "自己", "恋人", "工作", "上班", "加班", "面试", "学习", "考试", "论文", "毕业", "编程", "代码", "调试", "报错", "部署", "模型", "电脑", "手机", "游戏", "动漫", "抽卡", "番剧", "音乐", "歌", "电影", "视频", "小说", "吃饭", "午饭", "晚饭", "夜宵", "零食", "咖啡", "奶茶", "做饭", "外卖", "睡觉", "熬夜", "失眠", "生病", "感冒", "医院", "吃药", "运动", "跑步", "累", "钱", "工资", "花钱", "购物", "快递", "房租", "旅行", "打车", "天气", "开心", "难过", "委屈", "生气", "焦虑", "孤独"]
@@ -29,6 +29,36 @@ SHORT_ACK = {"嗯", "哦", "好", "好的", "在", "在吗", "hi", "在不在", 
 REMEMBER_HINTS = ("记住", "别忘", "记一下", "要记得", "记牢", "答应我", "约好", "约定")
 STOP = set("的了吗呢吧啊呀哦嗯是在和与就都也还又很太把被给让这那一个我你他她它们")
 
+
+SELF_MOOD_LABELS = (
+    (-1.01, "很低落"), (-0.55, "有点沉"), (-0.2, "略闷"),
+    (0.2, "平静"), (0.55, "还不错"), (1.01, "挺开心"),
+)
+
+MUTE_ON = ("安静", "别说话", "闭嘴", "先别说", "别吵")
+MUTE_OFF = ("可以聊天了", "聊吧", "说话吧", "可以说了", "不生气了")
+MD_BULLET = re.compile(r"^\s*(?:[-*+]\s+|\d+\.\s+|>\s?)", re.M)
+
+
+def plain_md(text: str) -> str:
+    """把 markdown 洗成纯文本：QQ 不认这些符号，留着很丑。"""
+    t = str(text or "")
+    if not t:
+        return t
+    t = re.sub(r"```[a-zA-Z]*\n?", "", t)
+    t = t.replace("```", "")
+    t = re.sub(r"`([^`]*)`", r"\1", t)
+    t = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", t)
+    t = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", t)
+    t = re.sub(r"^\s{0,3}#{1,6}\s*", "", t, flags=re.M)
+    t = MD_BULLET.sub("", t)
+    t = re.sub(r"\*\*([^*]+)\*\*", r"\1", t)
+    t = re.sub(r"__([^_]+)__", r"\1", t)
+    t = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"\1", t)
+    t = re.sub(r"^\s*[-*_]{3,}\s*$", "", t, flags=re.M)
+    t = t.replace("|", " ").replace("→", "→")
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    return t.strip()
 
 def split_sections(prompt: str, titles: list[str]) -> tuple[str, dict[str, str]]:
     base = prompt
@@ -1597,8 +1627,12 @@ class MemoryLayersPlugin(Star):
         "好累": -0.7, "没意思": -0.5, "受不了": -0.8, "难受": -0.7, "emo": -0.6, "讨厌": -0.6,
     }
 
+    SARCASM_WORDS = ("呵呵", "行吧", "随便", "随便你", "无所谓", "你开心就好", "懒得", "算了")
+    TIRED_WORDS = ("困", "好困", "想睡", "没力气", "累趴", "瘫了", "撑不住", "打不起精神")
+
     NEUTRAL_WORDS = ("还行", "还好", "一般", "凑合", "随便", "都可以", "无所谓", "就那样")
-    REPORT_WORDS = ("他说", "她说", "听说", "别人说", "有人说", "他们都", "她们都", "他老是", "她老是")
+    REPORT_WORDS = ("他说", "她说", "听说", "别人说", "有人说", "他们都", "她们都",
+                    "他老是", "她老是", "他在", "她在", "他们", "她们", "他今天", "她今天")
     EMOJI_SENTI = {"😭": -0.8, "😢": -0.7, "🥲": -0.3, "😡": -0.8, "😞": -0.6,
                    "😄": 0.7, "😊": 0.5, "🥰": 0.7, "😂": 0.45, "🙃": -0.1,
                    "唉": -0.3, "哎": -0.2}
@@ -1659,7 +1693,7 @@ class MemoryLayersPlugin(Star):
                 break
         return start, end
 
-    def _emotion_analysis(self, text: str) -> dict:
+    def _emotion_core(self, text: str) -> dict:
         """情绪分析 v3：分句作用域 + 转述降权 + 程度后缀 + emoji + 中性词。"""
         t = str(text or "")
         empty = {"v": 0.0, "label": "", "pos": 0, "neg": 0, "n": 0,
@@ -1730,6 +1764,57 @@ class MemoryLayersPlugin(Star):
                 "pos": sum(1 for _, x, _, _ in hits if x > 0),
                 "neg": sum(1 for _, x, _, _ in hits if x < 0),
                 "n": len(hits), "neutral": neutral_word, "reported": reported}
+
+    CONTRAST_WORDS = ("但是", "但", "不过", "可是", "然而", "就是")
+    HYPOTHETICAL = ("要是", "如果", "假如", "的话", "万一")
+    DURATION_WORDS = ("最近", "这几天", "这阵子", "一直", "老是", "总是")
+    RHETORIC = ("难道", "不是吗", "怎么会", "怎么可能", "谁不", "哪有")
+
+    def _emotion_analysis(self, text: str) -> dict:
+        """增强版：转折取后句、假设降权、反问降置信、QQ 表情码剥离、强度分级。"""
+        t = str(text or "")
+        if not t:
+            return {"v": 0.0, "label": "", "pos": 0, "neg": 0, "n": 0,
+                    "neutral": True, "reported": False, "intensity": 0.0,
+                    "persist": False, "rhetoric": False}
+        t = re.sub(r"\[em\]e?\d+\[/em\]", " ", t)
+        t = re.sub(r"\[/?em\]", " ", t)
+
+        # 转折：前句只占 40%，后句占 100%
+        parts = [t]
+        for w in self.CONTRAST_WORDS:
+            if w in t:
+                parts = [p for p in t.split(w) if p.strip()] or [t]
+                break
+        total_v = 0.0
+        weights = 0.0
+        merged = {"pos": 0, "neg": 0, "n": 0, "label": "", "neutral": False, "reported": False}
+        for i, seg in enumerate(parts):
+            w = 1.0 if i == len(parts) - 1 else 0.4
+            r = self._emotion_core(seg)
+            total_v += float(r.get("v") or 0) * w
+            weights += w
+            for k in ("pos", "neg", "n"):
+                merged[k] += int(r.get(k) or 0)
+            if not merged["label"] and r.get("label"):
+                merged["label"] = r.get("label")
+            merged["neutral"] = merged["neutral"] or bool(r.get("neutral"))
+            merged["reported"] = merged["reported"] or bool(r.get("reported"))
+        v = total_v / weights if weights else 0.0
+
+        hypothetical = any(k in t for k in self.HYPOTHETICAL)
+        rhetoric = any(k in t for k in self.RHETORIC) and ("？" in t or "?" in t)
+        if hypothetical:
+            v *= 0.75
+        if rhetoric:
+            v *= 0.6
+
+        persist = any(k in t for k in self.DURATION_WORDS)
+        intensity = min(1.0, abs(v) + (0.15 if any(x in t for x in ("！！", "!!", "太", "超级")) else 0))
+        return {"v": round(max(-1.0, min(1.0, v)), 2), "label": merged["label"],
+                "pos": merged["pos"], "neg": merged["neg"], "n": merged["n"],
+                "neutral": merged["neutral"], "reported": merged["reported"],
+                "intensity": round(intensity, 2), "persist": persist, "rhetoric": rhetoric}
 
     def _query_valence(self, text: str) -> float:
         """这句话的情绪倾向（-1 ~ 1）。"""
@@ -2314,6 +2399,10 @@ class MemoryLayersPlugin(Star):
         await self._apply_persona()
 
     async def organize_facts(self) -> str:
+        try:
+            await asyncio.to_thread(self.dedupe_facts_sync)
+        except Exception:
+            pass
         facts = [f for f in self.l3 if (f.get("text") or "").strip() and not f.get("parked")]
         if len(facts) < 2:
             await self._apply_persona()
@@ -2444,7 +2533,44 @@ class MemoryLayersPlugin(Star):
 
     # ---------- injection ----------
     @filter.on_llm_request()
-    def _provider_stats(self, since: float = 0) -> dict:
+    def _emo_note(self, v: float, label: str, text: str) -> None:
+        """记一条情绪流水，给 /情绪 用，不依赖压缩结果。"""
+        try:
+            if abs(v) < 0.3:
+                return
+            rec = {"ts": round(time.time(), 1), "v": round(v, 2), "label": label,
+                   "text": str(text or "")[:40]}
+            path = self.data_dir / "mood_log.jsonl"
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            ema = float(self.state.get("mood_ema") or 0.0)
+            self.state["mood_ema"] = round(ema * 0.85 + v * 0.15, 3)
+        except Exception:
+            pass
+
+    def _emo_days(self, days: int = 8) -> dict:
+        """读最近几天的情绪流水：{MM-DD: [v, ...]}"""
+        out: dict = {}
+        try:
+            path = self.data_dir / "mood_log.jsonl"
+            if not path.exists():
+                return out
+            cut = time.time() - days * DAY
+            for line in path.read_text(encoding="utf-8").splitlines()[-3000:]:
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    continue
+                ts = float(rec.get("ts") or 0)
+                if ts < cut:
+                    continue
+                day = datetime.fromtimestamp(ts).strftime("%m-%d")
+                out.setdefault(day, []).append(float(rec.get("v") or 0))
+        except Exception:
+            return out
+        return out
+
+    def _cache_stats(self, since: float = 0) -> dict:
         """从 AstrBot 的 provider_stats 里读最近 20 次请求的缓存命中情况。"""
         try:
             db = Path(self.data_dir).parent.parent / "data_v4.db"
@@ -2501,7 +2627,7 @@ class MemoryLayersPlugin(Star):
             plan["samples"] = int(plan.get("samples", 0)) + 1
             if plan["samples"] % 10 != 0:
                 return
-            st = self._provider_stats(float(plan.get("mark") or 0))
+            st = self._cache_stats(float(plan.get("mark") or 0))
             if not st:
                 return
             score = self._cache_score(st)
@@ -2556,11 +2682,261 @@ class MemoryLayersPlugin(Star):
         except Exception as exc:
             logger.debug(f"[Wave] 缓存调优跳过: {exc}")
 
+    async def _recall(self, query: str) -> list[dict]:
+        """正常召回；一条都没有时放宽门槛、带上上一句话再试一次。"""
+        try:
+            hits = await self.retrieve_async(query)
+            if hits:
+                return hits
+            if len([c for c in query if not c.isspace()]) < 6:
+                return []
+            floor = float(self.state.get("score_floor") or 1.1)
+            prev = str(self.state.get("last_query") or "").strip()
+            wider = (query + " " + prev).strip() if prev and prev != query else query
+            try:
+                self.state["score_floor"] = round(max(0.55, floor * 0.72), 2)
+                hits = await self.retrieve_async(wider)
+            finally:
+                self.state["score_floor"] = floor
+            if hits:
+                _rs = self.state.setdefault("recall_stats", {})
+                _rs["wide"] = int(_rs.get("wide", 0)) + 1
+                logger.debug(f"[Wave] 放宽门槛召回 {len(hits)} 条：{query[:20]}")
+            return hits
+        except Exception as exc:
+            logger.debug(f"[Wave] 召回失败: {exc}")
+            return []
+
+    def _self_mood_days(self, days: int = 8) -> dict:
+        out: dict = {}
+        try:
+            path = self.data_dir / "self_mood.jsonl"
+            if not path.exists():
+                return out
+            cut = time.time() - days * DAY
+            for line in path.read_text(encoding="utf-8").splitlines()[-2000:]:
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    continue
+                ts = float(rec.get("ts") or 0)
+                if ts < cut:
+                    continue
+                day = datetime.fromtimestamp(ts).strftime("%m-%d")
+                out.setdefault(day, []).append(float(rec.get("v") or 0))
+        except Exception:
+            return out
+        return out
+
+    def _self_mood(self) -> dict:
+        m = self.state.get("self_mood")
+        if not isinstance(m, dict):
+            m = {"v": 0.05, "arousal": 0.4, "updated": time.time(), "n": 0}
+            self.state["self_mood"] = m
+        return m
+
+    def _self_mood_cfg(self) -> dict:
+        cfg = self.state.get("self_mood_cfg")
+        if not isinstance(cfg, dict):
+            cfg = {"couple": 0.35, "decay": 0.88, "gain": 1.0, "tune": 0}
+            self.state["self_mood_cfg"] = cfg
+        return cfg
+
+    def _self_label(self, v: float) -> str:
+        for edge, name in SELF_MOOD_LABELS:
+            if v < edge:
+                return name
+        return "平静"
+
+    def _self_mood_update(self, user_v: float, event_delta: float = 0.0, text: str = "", ts: float = 0.0) -> dict:
+        """她自己的情绪：受对方影响，但也有惯性和自己的底子。"""
+        try:
+            m = self._self_mood()
+            cfg = self._self_mood_cfg()
+            couple = float(cfg.get("couple") or 0.35)
+            decay = float(cfg.get("decay") or 0.88)
+            gain = float(cfg.get("gain") or 1.0)
+            base = float(cfg.get("base") or 0.08)
+            t = str(text or "")
+            if any(w in t for w in ("谢谢", "夸", "可爱", "厉害", "喜欢你", "真好")):
+                event_delta += 0.15
+            if any(w in t for w in ("滚", "烦死了", "别烦", "闭嘴", "讨厌你")):
+                event_delta -= 0.25
+            if t.strip() in ("哦", "嗯", "随便", "哦哦"):
+                event_delta -= 0.08
+            # 被依赖 / 被逗笑：小幅正向，且会提高唤醒度
+            arousal_delta = 0.0
+            if any(w in t for w in ("陪我", "怎么办", "帮我", "在吗", "求求你")):
+                event_delta += 0.05
+                arousal_delta += 0.12
+            if any(w in t for w in ("哈哈", "笑死", "草", "绷不住")):
+                event_delta += 0.08
+                arousal_delta += 0.15
+            if any(w in t for w in ("滚", "烦死了", "闭嘴", "讨厌你")):
+                arousal_delta += 0.20
+            # 冲突之后恢复更慢
+            if event_delta <= -0.2:
+                m["trauma"] = min(3, int(m.get("trauma", 0)) + 2)
+            elif int(m.get("trauma", 0)) > 0:
+                m["trauma"] = int(m.get("trauma", 0)) - 1
+            _decay = decay
+            if int(m.get("trauma", 0)) > 0:
+                _decay = min(0.96, decay + 0.04)
+
+            nv = _decay * float(m.get("v") or 0) + (1 - _decay) * base + gain * couple * user_v + event_delta
+            nv = max(-1.0, min(1.0, nv))
+            ar = 0.75 * float(m.get("arousal") or 0.4) + 0.25 * min(1.0, abs(user_v) + 0.2) + arousal_delta
+            ar = max(0.0, min(1.0, ar))
+            m["arousal"] = round(ar, 3)
+            m["v"] = round(nv, 3)
+            m["label"] = self._self_label(nv)
+            m["updated"] = time.time()
+            m["n"] = int(m.get("n", 0)) + 1
+            try:
+                path = self.data_dir / "self_mood.jsonl"
+                with path.open("a", encoding="utf-8") as fh:
+                    fh.write(json.dumps({"ts": round(float(ts or time.time()), 1), "v": m["v"],
+                                         "label": m["label"], "from_user": round(user_v, 2)},
+                                        ensure_ascii=False) + "\n")
+            except Exception:
+                pass
+            return m
+        except Exception:
+            return {"v": 0.0, "label": "平静"}
+
+    def _self_mood_adapt(self, reply_text: str) -> None:
+        """自我迭代：看她实际说出的话和自己的情绪设定差多少，调耦合系数。"""
+        try:
+            r = self._emotion_analysis(reply_text)
+            rv = float(r.get("v") or 0.0)
+            m = self._self_mood()
+            mv = float(m.get("v") or 0)
+            gap = abs(rv - mv)
+            cfg = self._self_mood_cfg()
+            if gap > 0.55:
+                cfg["couple"] = round(max(0.15, float(cfg.get("couple") or 0.35) - 0.02), 3)
+                cfg["decay"] = round(min(0.94, float(cfg.get("decay") or 0.88) + 0.01), 3)
+            elif gap < 0.20:
+                cfg["couple"] = round(min(0.60, float(cfg.get("couple") or 0.35) + 0.01), 3)
+            # 长期基调：她说出口的情绪偏高，就把基线往上抬一点
+            cfg["base"] = round(max(-0.15, min(0.25,
+                                 float(cfg.get("base") or 0.08) + 0.004 * (rv - mv))), 3)
+            cfg["tune"] = int(cfg.get("tune", 0)) + 1
+            m["last_reply_v"] = round(rv, 2)
+            m["gap"] = round(gap, 2)
+        except Exception:
+            pass
+
+    def _self_mood_line(self) -> str:
+        """她自己那一路的情绪，和主人那一路分开写。"""
+        try:
+            m = self._self_mood()
+            cfg = self._self_mood_cfg()
+            mv = float(m.get("v") or 0)
+            ar0 = float(m.get("arousal") or 0.4)
+            if abs(mv) < 0.18 and ar0 < 0.7:
+                return ""
+
+            ar = float(m.get("arousal") or 0.4)
+            if mv >= 0.18:
+                mine = "挺来劲" if ar > 0.6 else "挺松快"
+            elif mv <= -0.18:
+                mine = "有点烦躁" if ar > 0.6 else "提不起劲"
+            else:
+                mine = "有点躁，说不上好也说不上坏"
+            behavior = "话可以说多一点" if ar > 0.62 else ("话少一点，别硬找话题" if ar < 0.35 else "")
+            line = f"【我此刻】{m.get('label') or self._self_label(mv)}（{mine}）"
+            if behavior:
+                line += f"，{behavior}"
+            line += "\n"
+            u = self.state.get("mood_ema")
+            if isinstance(u, (int, float)) and u < -0.3 and mv < -0.3:
+                line += "【别硬撑】你自己也不在状态，别硬装开心去哄，说实话也行。\n"
+            return line
+        except Exception:
+            return ""
+
+    def _meme_plugin_present(self) -> bool:
+        """有没有现成的表情包插件（有的话不重复造轮子）。"""
+        try:
+            return (Path(__file__).resolve().parent.parent / "meme_manager").exists()
+        except Exception:
+            return False
+
+    def _sticker_enabled(self) -> bool:
+        mode = str(self.cfg("emotion_sticker", "auto") or "auto").lower()
+        if mode == "off":
+            return False
+        if mode == "on":
+            return True
+        return not self._meme_plugin_present()
+
+    def _sticker_dir(self) -> Path:
+        return Path(self.data_dir) / "stickers"
+
+    def _pick_sticker(self, label: str):
+        try:
+            base = self._sticker_dir()
+            if not base.exists():
+                return None
+            alias = {"开心": "开心", "委屈": "难过", "失落": "难过", "难过": "难过",
+                     "生气": "生气", "烦": "生气", "焦虑": "累", "累": "累"}
+            folders = [base / label, base / alias.get(label, ""), base]
+            for folder in folders:
+                if not str(folder) or not folder.exists():
+                    continue
+                files = sorted([p for p in folder.iterdir()
+                                if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".gif")])
+                if files:
+                    return files[int(time.time()) % len(files)]
+        except Exception:
+            return None
+        return None
+
+    def _muted(self, umo: str) -> bool:
+        return bool((self.state.get("muted") or {}).get(umo))
+
+    def _set_muted(self, umo: str, on: bool) -> None:
+        m = dict(self.state.get("muted") or {})
+        if on:
+            m[umo] = time.time()
+        else:
+            m.pop(umo, None)
+        self.state["muted"] = m
+        self._save_state()
+
     async def inject(self, event: AstrMessageEvent, req: ProviderRequest):
+        _t_inject = time.perf_counter()
         try:
             umo = str(getattr(event, "unified_msg_origin", "") or "")
             if not self._private_chat_ok(umo):
                 return
+            _is_group = ("Group" in umo or "group" in umo)
+            if _is_group:
+                try:
+                    _now = time.time()
+                    _rate = dict(self.state.get("group_rate") or {})
+                    _lst = [t for t in (_rate.get(umo) or []) if _now - t < 3600]
+                    _gap = self._int("group_min_gap_seconds", 8, 1)
+                    _cap = self._int("group_max_per_hour", 6, 1)
+                    if (_lst and (_now - _lst[-1]) < _gap) or len(_lst) >= _cap:
+                        try:
+                            event.stop_event()
+                        except Exception:
+                            pass
+                        return
+                    _lst.append(_now)
+                    _rate[umo] = _lst[-60:]
+                    self.state["group_rate"] = _rate
+                except Exception:
+                    pass
+            _q0 = str(getattr(event, "message_str", "") or "").strip()
+            if _q0 and not _q0.startswith("/"):
+                if any(k in _q0 for k in MUTE_OFF):
+                    if self._muted(umo):
+                        self._set_muted(umo, False)
+                elif any(k in _q0 for k in MUTE_ON):
+                    self._set_muted(umo, True)
             sid = str(event.get_sender_id())
             owners = self._owner_ids()
             if owners and sid not in owners:
@@ -2595,7 +2971,18 @@ class MemoryLayersPlugin(Star):
             _plain = "".join(ch for ch in query if not ch.isspace())
             _skip = len(_plain) <= 3 or _plain.lower() in SHORT_ACK
             qval = 0.0 if _skip else self._query_valence(query)
-            hits = [] if _skip else (await self.retrieve_async(query) if query else [])
+            if not _skip and query:
+                try:
+                    _ea0 = self._emotion_analysis(query)
+                    self._last_ea = _ea0
+                    self._emo_note(_ea0.get("v") or 0.0, _ea0.get("label") or "", query)
+                    self._last_emo = {"v": _ea0.get("v") or 0.0, "label": _ea0.get("label") or ""}
+                    self._self_mood_update(_ea0.get("v") or 0.0, 0.0, query)
+                except Exception:
+                    pass
+            hits = [] if _skip else (await self._recall(query) if query else [])
+            if query and not _skip:
+                self.state["last_query"] = query[:80]
             try:
                 st = self.state.setdefault("recall_stats", {"n": 0, "hit": 0, "empty": 0, "avg": 0})
                 _ch = int(getattr(self, "_cache_hits", 0))
@@ -2618,6 +3005,8 @@ class MemoryLayersPlugin(Star):
                     self._save_state()
                     logger.info(f"[Wave] score floor -> {cur} (hit {hit_rate:.0%}, avg {st.get('avg')})")
                 self._cache_tune_tick()
+                if st["n"] % 10 == 0:
+                    self._save_state()
                 if st["n"] % 100 == 0:
                     rate = round(100.0 * st["hit"] / max(1, st["n"]), 1)
                     logger.debug(f"[Wave] recall stats: {st['hit']}/{st['n']} hit ({rate}%), avg {st['avg']} items")
@@ -2659,6 +3048,21 @@ class MemoryLayersPlugin(Star):
                 lines = _picked_lines
                 block = ("\n\n" + (self._now_line() if _plan.get("time") != "off" else "") + self._relationship_line() + "【联想记忆｜下面是记忆要点，不是台词：只取事实，用你自己的话说；只在相关时引用一条，不相关就忽略】\n"
                          + "\n".join(lines[:_cap]) + "\n")
+                try:
+                    _days = self._emo_days(8)
+                    if len(_days) >= 2:
+                        _today = datetime.now().strftime("%m-%d")
+                        _tv = _days.get(_today) or []
+                        _prev = [v for d, vs in _days.items() if d != _today for v in vs]
+                        if _tv and _prev:
+                            _ta = sum(_tv) / len(_tv)
+                            _pa = sum(_prev) / len(_prev)
+                            if _pa - _ta > 0.35:
+                                block += "【情绪变化】他今天比前几天明显低落，别问怎么了，先陪着说句轻的。\n"
+                            elif _ta - _pa > 0.35:
+                                block += "【情绪变化】他今天比前几天轻快，顺着这个劲儿聊。\n"
+                except Exception:
+                    pass
                 mood = self._mood_trend()
                 if mood and abs(mood.get("avg", 0)) >= 0.15:
                     tone = "偏低落" if mood["avg"] < 0 else "偏轻松"
@@ -2666,12 +3070,20 @@ class MemoryLayersPlugin(Star):
                     if mood.get("label"):
                         block += f"，多次出现「{mood['label']}」"
                     block += "。说话时顺着这个气氛，别硬转话题，也别主动提起情绪本身。\n"
-                _ea = self._emotion_analysis(query)
-                if (_ea["neg"] >= 2 and _ea["v"] <= -0.55
-                        and not _ea.get("neutral") and not _ea.get("reported")):
+                _ea = getattr(self, "_last_ea", None) or self._emotion_analysis(query)
+                _strong_neg = (_ea["v"] <= -0.45 and float(_ea.get("intensity") or 0) >= 0.8
+                               and not _ea.get("neutral") and not _ea.get("reported"))
+                _ai_ok = not _ea.get("neutral") and not _ea.get("reported")
+                if _ai_ok and ((_ea["neg"] >= 2 and _ea["v"] <= -0.55) or _strong_neg):
                     block += "【他现在的状态】情绪很沉。先接住，别给建议、别分析原因、别问为什么，一句话就够。\n"
                 elif _ea["pos"] >= 2 and _ea["v"] >= 0.55:
                     block += "【他现在的状态】心情不错，顺着他的劲儿聊，别扫兴。\n"
+                try:
+                    _sm = self._self_mood_line()
+                    if _sm:
+                        block += _sm
+                except Exception:
+                    pass
                 if qval and any(abs(float((h.get("emotion") or {}).get("v") or 0)) > 0.3 for h in hits):
                     block += "【情绪共鸣】这次想起的事里有当时的情绪，可以顺着那份感觉接话，但别复述情绪词。\n"
                 chain = self.reason_chain(hits)
@@ -2684,12 +3096,19 @@ class MemoryLayersPlugin(Star):
                 _ist = self.state.setdefault("inject_stats", {"n": 0, "chars": 0})
                 _ist["n"] = int(_ist.get("n", 0)) + 1
                 _ist["chars"] = int(_ist.get("chars", 0)) + len(block)
-                if _ist["n"] % 30 == 0:
+                if _ist["n"] % 30 == 0 or _ist["n"] % 10 == 0:
+                    self._save_state()
                     logger.info(
                         f"[Wave] inject avg {int(_ist['chars']) / max(1, _ist['n']):.0f} chars/turn "
                         f"（{_ist['n']} 轮），补全检索缓存命中 {getattr(self, '_cache_hits', 0)} 次"
                     )
                 self.state["cache_hits"] = int(getattr(self, "_cache_hits", 0))
+            except Exception:
+                pass
+            try:
+                _perf = self.state.setdefault("perf", {"n": 0, "ms": 0.0})
+                _perf["n"] = int(_perf.get("n", 0)) + 1
+                _perf["ms"] = float(_perf.get("ms", 0.0)) + (time.perf_counter() - _t_inject) * 1000
             except Exception:
                 pass
             try:
@@ -2822,6 +3241,103 @@ class MemoryLayersPlugin(Star):
 
 
     # ---------- 内置星图页面 ----------
+    def _backfill_mood(self) -> None:
+        """第一次打开情绪页时，用 L2 里已有的情绪回填两条流水。"""
+        try:
+            self_path = self.data_dir / "self_mood.jsonl"
+            user_path = self.data_dir / "mood_log.jsonl"
+            need_user = not (user_path.exists() and user_path.stat().st_size > 0)
+            need_self = not (self_path.exists() and self_path.stat().st_size > 0)
+            if not need_user and not need_self:
+                return
+            notes = sorted([n for n in self.l2 if isinstance(n.get("emotion"), dict)],
+                           key=lambda n: float(n.get("ts") or 0))
+            if not notes:
+                return
+            written = 0
+            if need_user:
+                with user_path.open("a", encoding="utf-8") as fu:
+                    for n in notes:
+                        ts = float(n.get("ts") or 0)
+                        emo = n.get("emotion") or {}
+                        v = emo.get("v")
+                        if not ts or not isinstance(v, (int, float)):
+                            continue
+                        label = str(emo.get("label") or "")
+                        fu.write(json.dumps({"ts": round(ts, 1), "v": round(float(v), 2),
+                                             "label": label, "text": str(n.get("summary") or "")[:40],
+                                             "backfill": True}, ensure_ascii=False) + "\n")
+                        written += 1
+            if need_self:
+                self.state["self_mood"] = {"v": 0.05, "arousal": 0.4, "updated": time.time(), "n": 0}
+                for n in notes:
+                    emo = n.get("emotion") or {}
+                    v = emo.get("v")
+                    if isinstance(v, (int, float)):
+                        self._self_mood_update(float(v), 0.0, "", float(n.get("ts") or 0))
+            if written:
+                logger.info(f"[Wave] 情绪流水回填 {written} 条（来自 L2）")
+        except Exception as exc:
+            logger.debug(f"[Wave] 情绪回填跳过: {exc}")
+
+    def _web_mood(self) -> dict:
+        """给星图的情绪页用：她 + 你 两路情绪的日/时聚合。"""
+        now = time.time()
+        today = datetime.now().strftime("%m-%d")
+        out = {"now": now, "today": today, "self": {}, "user": {}}
+
+        def _agg(map_):
+            days = []
+            for d in sorted(map_)[-14:]:
+                vs = map_[d]
+                days.append({"d": d, "avg": round(sum(vs) / len(vs), 3), "n": len(vs)})
+            return days
+
+        try:
+            self_days = self._self_mood_days(15)
+            m = self._self_mood()
+            cfg = self._self_mood_cfg()
+            out["self"] = {"v": m.get("v"), "label": m.get("label") or "",
+                           "n": m.get("n"), "couple": cfg.get("couple"),
+                           "decay": cfg.get("decay"), "tune": cfg.get("tune"),
+                           "days": _agg(self_days)}
+        except Exception:
+            pass
+
+        try:
+            user_days = self._emo_days(15)
+            out["user"] = {"ema": self.state.get("mood_ema"),
+                           "days": _agg(user_days)}
+        except Exception:
+            pass
+
+        # 今天的逐小时（两边都算）
+        hourly = {"self": [None] * 24, "user": [None] * 24}
+        try:
+            for key, fname in (("self", "self_mood.jsonl"), ("user", "mood_log.jsonl")):
+                path = self.data_dir / fname
+                if not path.exists():
+                    continue
+                acc = {}
+                cut = now - 26 * 3600
+                for line in path.read_text(encoding="utf-8").splitlines()[-2000:]:
+                    try:
+                        rec = json.loads(line)
+                    except Exception:
+                        continue
+                    ts = float(rec.get("ts") or 0)
+                    if ts < cut:
+                        continue
+                    if datetime.fromtimestamp(ts).strftime("%m-%d") != today:
+                        continue
+                    acc.setdefault(datetime.fromtimestamp(ts).hour, []).append(float(rec.get("v") or 0))
+                for h, vs in acc.items():
+                    hourly[key][h] = round(sum(vs) / len(vs), 3)
+        except Exception:
+            pass
+        out["hourly"] = hourly
+        return out
+
     def _web_payload(self) -> dict:
         now = time.time()
         facts = [f for f in self.l3 if not f.get("parked")]
@@ -2867,6 +3383,29 @@ class MemoryLayersPlugin(Star):
                     return
 
                 def do_GET(self):
+                    if self.path.startswith("/api/mood"):
+                        token = str(plugin.cfg("web_token", "") or plugin.state.get("web_token") or "").strip()
+                        if token:
+                            from urllib.parse import urlparse, parse_qs
+                            qs = parse_qs(urlparse(self.path).query)
+                            got = (qs.get("token") or [""])[0] or self.headers.get("X-Wave-Token", "")
+                            if got != token:
+                                self.send_response(401)
+                                self.end_headers()
+                                self.wfile.write(b'{"error":"unauthorized"}')
+                                return
+                        try:
+                            plugin._backfill_mood()
+                        except Exception:
+                            pass
+                        body = json.dumps(plugin._web_mood(), ensure_ascii=False).encode("utf-8")
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json; charset=utf-8")
+                        self.send_header("Content-Length", str(len(body)))
+                        self.send_header("Cache-Control", "no-store")
+                        self.end_headers()
+                        self.wfile.write(body)
+                        return
                     if self.path.startswith("/api/cloud"):
                         token = str(plugin.cfg("web_token", "") or plugin.state.get("web_token") or "").strip()
                         if token:
@@ -2934,6 +3473,11 @@ class MemoryLayersPlugin(Star):
             asyncio.create_task(self._deferred_semantic())
         except Exception as exc:
             logger.warning(f"[记忆] 启动自检失败: {exc}")
+        try:
+            await asyncio.to_thread(self._prune_notes)
+            await asyncio.to_thread(self.dedupe_facts_sync)
+        except Exception:
+            pass
         logger.info(
             f"[记忆] 已启动：L1 {self._int('l1_window', 10)} 句 / L2 {self._int('l2_ttl_hours', 24)}h / "
             f"L3 永久 / L4 存档 / 联想图 {len(self._graph.get('nodes') or [])} 点"
@@ -2947,6 +3491,68 @@ class MemoryLayersPlugin(Star):
 
     # ---------- commands ----------
     @filter.command("记忆")
+    def _prune_notes(self, keep_expired_days: int = 7) -> int:
+        """清掉过期很久的 L2，减少载入与遍历开销。"""
+        try:
+            cut = time.time() - keep_expired_days * DAY
+            before = len(self.l2)
+            self.l2 = [n for n in self.l2 if float(n.get("expires_at") or 0) > cut]
+            removed = before - len(self.l2)
+            if removed:
+                self._save(self.l2_path, self.l2)
+                logger.info(f"[Wave] 清理过期笔记 {removed} 条（保留近 {keep_expired_days} 天）")
+            return removed
+        except Exception:
+            return 0
+
+    def dedupe_facts_sync(self) -> tuple[int, int]:
+        """把相似度高的长期记忆合并，返回 (原有条数, 合并掉条数)。"""
+        facts = [f for f in self.l3 if not f.get("parked")]
+        dropped = set()
+        merged = 0
+        for i, f in enumerate(facts):
+            if i in dropped:
+                continue
+            bi = bigrams(f.get("text", ""))
+            for j in range(i + 1, len(facts)):
+                if j in dropped:
+                    continue
+                g = facts[j]
+                if jaccard(bi, bigrams(g.get("text", ""))) < 0.72:
+                    continue
+                if f.get("text") == g.get("text"):
+                    keep, drop = f, g
+                else:
+                    keep, drop = (g, f) if len(g.get("text", "")) >= len(f.get("text", "")) else (f, g)
+                keep["hits"] = int(keep.get("hits", 0)) + int(drop.get("hits", 0))
+                keep["tags"] = list(dict.fromkeys((keep.get("tags") or []) + (drop.get("tags") or [])))[:6]
+                keep["confidence"] = max(float(keep.get("confidence") or 0.65), float(drop.get("confidence") or 0.65))
+                drop["parked"] = True
+                drop["park_reason"] = "dedupe"
+                dropped.add(j)
+                merged += 1
+        if merged:
+            self._save(self.l3_path, self.l3)
+            self._save_state()
+        return len(facts), merged
+
+    def trim_facts_sync(self, keep: int) -> int:
+        """只留权重最高的 keep 条，其余下沉。"""
+        active = [f for f in self.l3 if not f.get("parked")]
+        if len(active) <= keep:
+            return 0
+        def score(f):
+            return (int(f.get("hits", 0)), float(f.get("confidence") or 0.65), float(f.get("ts") or 0))
+        active.sort(key=score, reverse=True)
+        cut = 0
+        for f in active[keep:]:
+            f["parked"] = True
+            f["park_reason"] = "trim"
+            cut += 1
+        self._save(self.l3_path, self.l3)
+        self._save_state()
+        return cut
+
     async def memory_cmd(self, event: AstrMessageEvent):
         raw = (event.message_str or "").strip()
         for prefix in ("/记忆", "记忆"):
@@ -2954,6 +3560,21 @@ class MemoryLayersPlugin(Star):
                 raw = raw[len(prefix):]
                 break
         action = raw.strip()
+
+        if action in ("去重", "dedupe"):
+            total, merged = await asyncio.to_thread(self.dedupe_facts_sync)
+            yield event.plain_result(f"长期记忆 {total} 条，合并掉 {merged} 条重复。")
+            return
+
+        if action.startswith("裁剪"):
+            raw_n = action[2:].strip() or "60"
+            try:
+                keep = max(10, int(raw_n))
+            except Exception:
+                keep = 60
+            cut = await asyncio.to_thread(self.trim_facts_sync, keep)
+            yield event.plain_result(f"保留权重最高的 {keep} 条，下沉 {cut} 条。" if cut else f"活跃记忆已经不超过 {keep} 条。")
+            return
 
         if action.startswith("搜"):
             keyword = action[1:].strip()
@@ -3055,6 +3676,26 @@ class MemoryLayersPlugin(Star):
         except Exception as exc:
             logger.debug(f"[Wave] 分段发送失败: {exc}")
 
+    def _maybe_sticker(self, chain) -> None:
+        """情绪够强、且没有别的表情插件时，附一张表情包。"""
+        try:
+            if not self._sticker_enabled():
+                return
+            emo = getattr(self, "_last_emo", None) or {}
+            v = float(emo.get("v") or 0)
+            if abs(v) < 0.5:
+                return
+            now = time.time()
+            if now - float(self.state.get("last_sticker_ts") or 0) < 1800:
+                return
+            path = self._pick_sticker(str(emo.get("label") or ""))
+            if not path:
+                return
+            chain.append(Image(str(path)))
+            self.state["last_sticker_ts"] = now
+        except Exception as exc:
+            logger.debug(f"[Wave] 表情发送跳过: {exc}")
+
     @filter.on_decorating_result()
     async def _drop_period(self, event: AstrMessageEvent):
         try:
@@ -3062,11 +3703,26 @@ class MemoryLayersPlugin(Star):
             chain = getattr(res, "chain", None) if res else None
             if not chain:
                 return
+            _umo = str(getattr(event, "unified_msg_origin", "") or "")
+            if self._muted(_umo):
+                try:
+                    chain.clear()
+                except Exception:
+                    pass
+                return
             for comp in chain:
                 text = getattr(comp, "text", None)
-                if not isinstance(text, str) or "。" not in text:
+                if not isinstance(text, str) or not text.strip():
                     continue
-                new = re.sub(r"。(?=\s*(?:\n|$))", "", text)
+                new = plain_md(text)
+                if "。" not in new:
+                    if new != text:
+                        try:
+                            comp.text = new
+                        except Exception:
+                            pass
+                    continue
+                new = re.sub(r"。(?=\s*(?:\n|$))", "", new)
                 for _bad, _good in self.STYLE_REWRITE:
                     if _bad in new:
                         new = new.replace(_bad, _good)
@@ -3088,8 +3744,92 @@ class MemoryLayersPlugin(Star):
                         comp.text = new
                     except Exception:
                         pass
+            try:
+                _final = " ".join(str(getattr(c, "text", "") or "") for c in chain)
+                if _final.strip():
+                    self._self_mood_adapt(_final)
+            except Exception:
+                pass
+            try:
+                self._maybe_sticker(chain)
+            except Exception:
+                pass
         except Exception:
             pass
+
+    @filter.command("表情")
+    async def sticker_cmd(self, event: AstrMessageEvent):
+        has_meme = self._meme_plugin_present()
+        enabled = self._sticker_enabled()
+        base = self._sticker_dir()
+        count = 0
+        try:
+            if base.exists():
+                count = len([p for p in base.rglob("*") if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".gif")])
+        except Exception:
+            pass
+        yield event.plain_result(
+            f"外部表情插件：{'有（不启用内置）' if has_meme else '无'}\n"
+            f"内置表情：{'启用' if enabled else '停用'} · 素材 {count} 张\n"
+            f"素材目录：{base}\n"
+            f"（放进 stickers/开心、难过、生气、累 四个文件夹即可生效）"
+        )
+
+    @filter.command("情绪")
+    async def mood_cmd(self, event: AstrMessageEvent):
+        now = time.time()
+        buckets = {}
+        # 优先用情绪流水（每条消息都记，比压缩摘要准）
+        try:
+            for day, vs in self._emo_days(8).items():
+                buckets.setdefault(day, []).extend(vs)
+        except Exception:
+            buckets = {}
+        for note in ([] if buckets else self.l2):
+            ts = float(note.get("ts") or 0)
+            if not ts or (now - ts) > 8 * DAY:
+                continue
+            emo = note.get("emotion") or {}
+            v = emo.get("v")
+            if not isinstance(v, (int, float)):
+                continue
+            day = datetime.fromtimestamp(ts).strftime("%m-%d")
+            buckets.setdefault(day, []).append(float(v))
+        if not buckets:
+            yield event.plain_result("这几天没攒到情绪记录。")
+            return
+        bars = "▁▂▃▄▅▆▇█"
+        days = sorted(buckets)[-7:]
+        lines = []
+        for day in days:
+            vals = buckets[day]
+            avg = sum(vals) / len(vals)
+            idx = max(0, min(7, int((avg + 1) / 2 * 7)))
+            mood = "沉" if avg < -0.25 else ("轻" if avg > 0.25 else "平")
+            lines.append(f"{day} {bars[idx]} {avg:+.2f} {mood}（{len(vals)}条）")
+        recent = self._mood_trend()
+        head = "你这边（近 7 天）：\n"
+        tail = ""
+        if recent:
+            tail = f"\n底色：{recent.get('label') or '平'} · {recent.get('avg')}（{recent.get('n')} 条）"
+
+        mine = []
+        try:
+            md = self._self_mood_days(8)
+            for day in sorted(md)[-5:]:
+                vs = md[day]
+                avg = sum(vs) / len(vs)
+                idx = max(0, min(7, int((avg + 1) / 2 * 7)))
+                mine.append(f"{day} {bars[idx]} {avg:+.2f}（{len(vs)}）")
+        except Exception:
+            pass
+        m = self._self_mood()
+        cfg = self._self_mood_cfg()
+        her = (f"\n我这边：{m.get('label') or '平静'} · v={m.get('v')} · 更新 {m.get('n')} 次\n"
+               f"耦合 {cfg.get('couple')} / 惯性 {cfg.get('decay')} · 自适应 {cfg.get('tune')} 次")
+        if mine:
+            her = "\n我这边（近 5 天）：\n" + "\n".join(mine) + her
+        yield event.plain_result(head + "\n".join(lines) + tail + "\n" + her)
 
     @filter.command("海浪")
     async def wave_cmd(self, event: AstrMessageEvent):
@@ -3116,8 +3856,9 @@ class MemoryLayersPlugin(Star):
             f"联想图 {len(self._graph.get('nodes') or [])} 点 / {len(self._graph.get('links') or [])} 边 · "
             f"标签 {len(getattr(self, '_tag_index', {}) or {})} 个\n"
             f"注入 {(int((self.state.get('inject_stats') or {}).get('chars', 0)) / max(1, int((self.state.get('inject_stats') or {}).get('n', 1)))):.0f} 字/轮 · "
+            f"{((self.state.get('perf') or {}).get('ms', 0) / max(1, (self.state.get('perf') or {}).get('n', 1))):.1f}ms/轮 · "
             f"检索缓存命中 {self.state.get('cache_hits', 0)} 次\n"
-            f"提示词缓存 {self._provider_stats().get('hit', '-')}% · "
+            f"提示词缓存 {self._cache_stats().get('hit', '-')}% · "
             f"调优 chars={self._cache_plan().get('chars')} max={self._cache_plan().get('max')} "
             f"time={self._cache_plan().get('time')}"
         )

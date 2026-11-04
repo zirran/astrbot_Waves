@@ -76,12 +76,31 @@ body.aside-collapsed aside>*{display:none}
 #tip{position:absolute;pointer-events:none;display:none;z-index:20;max-width:280px;background:rgba(6,12,24,.94);border:1px solid rgba(79,240,255,.35);color:#cfe3ff;font:11.5px/1.6 "Microsoft YaHei",sans-serif;padding:7px 9px;box-shadow:0 6px 20px rgba(0,0,0,.5)}
 #tip b{color:#4ff0ff;font-weight:700}
 @media (max-width:900px){#q,#btnShot{display:none}}
+
+#moodPage{position:fixed;inset:0;z-index:30;display:none;flex-direction:column;background:radial-gradient(1200px 700px at 20% 10%, rgba(38,96,180,.22) 0%, rgba(0,0,0,0) 60%),radial-gradient(900px 600px at 85% 90%, rgba(150,60,220,.18) 0%, rgba(0,0,0,0) 60%),linear-gradient(180deg,#050810,#070c16 60%,#04070d)}
+#moodPage.on{display:flex}
+#moodHead{display:flex;align-items:center;gap:14px;padding:14px 20px 10px;border-bottom:1px solid var(--line)}
+#moodHead h2{font-size:16px;margin:0;letter-spacing:.04em}
+#moodHead .sub{font-size:11px;color:var(--gray);letter-spacing:.08em;text-transform:uppercase}
+#moodHead button{margin-left:auto;background:rgba(8,16,30,.9);border:1px solid rgba(79,240,255,.35);color:var(--ink);padding:6px 12px;cursor:pointer;font:12px "Microsoft YaHei",sans-serif}
+#moodHead button:hover{background:rgba(79,240,255,.16);color:#eafcff}
+#moodBody{flex:1;display:flex;min-height:0}
+#moodCv{flex:1;display:block;min-width:0}
+#moodSide{width:280px;border-left:1px solid var(--line);padding:16px 18px;font:12.5px/1.9 "Microsoft YaHei",sans-serif;color:#cfe3ff;overflow:auto}
+#moodSide h3{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);margin:18px 0 6px;font-weight:700}
+#moodSide h3:first-child{margin-top:0}
+#moodSide b{color:#4ff0ff;font-weight:700}
+#moodSide .big{font-size:26px;font-weight:900;color:#eafcff;letter-spacing:.02em}
+#moodSide .row{display:flex;justify-content:space-between;gap:10px}
+#moodLegend{display:flex;gap:16px;font-size:11px;color:var(--gray);padding:8px 20px 12px}
+#moodLegend i{display:inline-block;width:10px;height:10px;margin-right:5px;vertical-align:middle}
 </style>
 </head>
 <body>
 <header>
   <div><div class="eyebrow">Memory Constellation</div><h1>记忆星图</h1></div>
   <a class="back" href="/">返回控制台</a>
+    <button id="openMood" style="background:rgba(79,240,255,.12);border:1px solid rgba(79,240,255,.45);color:#4ff0ff;padding:6px 12px;cursor:pointer;font:12px &quot;Microsoft YaHei&quot;,sans-serif;align-self:center">情绪</button>
   <div class="stats">
     <div class="stat"><b id="sFacts">—</b><span>长期记忆</span></div>
     <div class="stat"><b id="sNotes">—</b><span>近期摘要</span></div>
@@ -117,6 +136,35 @@ body.aside-collapsed aside>*{display:none}
     </div>
   </div>
   <div id="tip"></div>
+<section id="moodPage">
+  <div id="moodHead">
+    <span class="sub">Emotion</span>
+    <h2>情绪状态</h2>
+    <button id="moodBack">← 回到星图</button>
+  </div>
+  <div id="moodBody">
+    <canvas id="moodCv"></canvas>
+    <aside id="moodSide">
+      <h3>我此刻</h3>
+      <div class="big" id="moodMine">—</div>
+      <div id="moodMineMeta" style="color:#7d92b6"></div>
+      <h3>你这边</h3>
+      <div class="big" id="moodYours">—</div>
+      <div id="moodYoursMeta" style="color:#7d92b6"></div>
+      <h3>自适应</h3>
+      <div class="row"><span>耦合</span><b id="moodCouple">—</b></div>
+      <div class="row"><span>惯性</span><b id="moodDecay">—</b></div>
+      <div class="row"><span>调整次数</span><b id="moodTune">—</b></div>
+      <h3>怎么读</h3>
+      <div style="color:#8fa6c8">柱子是她每天的情绪均值，线是你那天的均值。<br>0 以上偏轻，以下偏沉。</div>
+    </aside>
+  </div>
+  <div id="moodLegend">
+    <span><i style="background:#4ff0ff"></i>她（柱）</span>
+    <span><i style="background:#b278ff"></i>你（线）</span>
+    <span style="color:#5d7characters"></span>
+  </div>
+</section>
 <aside>
     <div class="head"><span class="eyebrow">Detail</span><b>记忆详情</b></div>
     <div id="detail"><p class="empty">拖动画布旋转 · 滚轮或 + 放大 · 左上角可按时间筛选 · 点星看详情</p></div>
@@ -144,6 +192,7 @@ body.aside-collapsed aside>*{display:none}
   var zoomTarget = 1.0;
   var fitScaleTarget = 1;
   var fitCx = 0, fitCy = 0;
+  var lowQ = false, ringsAlpha = 0, parX = 0, parY = 0, parTX = 0, parTY = 0;
   var query = "";
   var tipEl = document.getElementById("tip");
 
@@ -216,7 +265,16 @@ body.aside-collapsed aside>*{display:none}
   function frame() {
     frames++;
     var nowMs = performance.now();
-    if (nowMs - lastFpsT > 500) { fps = Math.round(frames * 1000 / (nowMs - lastFpsT)); frames = 0; lastFpsT = nowMs; }
+    if (nowMs - lastFpsT > 500) {
+      fps = Math.round(frames * 1000 / (nowMs - lastFpsT)); frames = 0; lastFpsT = nowMs;
+      if (fps > 0) {
+        if (fps < 26) lowQ = true;
+        else if (fps > 42) lowQ = false;
+      }
+    }
+    ringsAlpha = Math.min(1, ringsAlpha + 0.02);
+    parX += (parTX - parX) * 0.06;
+    parY += (parTY - parY) * 0.06;
     var tsec = nowMs / 1000;
 
     ctx.clearRect(0, 0, W, H);
@@ -250,7 +308,10 @@ body.aside-collapsed aside>*{display:none}
       n = nodes[i];
       if (!visible(n)) continue;
       vis.push(n);
-      proj[n.id] = screenOf(n);
+      var sp0 = screenOf(n);
+      sp0.x += dragging ? 0 : parX;
+      sp0.y += dragging ? 0 : parY;
+      proj[n.id] = sp0;
     }
     fitScale += (fitScaleTarget - fitScale) * 0.10;
     if (Math.abs(fitScaleTarget - fitScale) < 0.002) fitScale = fitScaleTarget;
@@ -275,7 +336,7 @@ body.aside-collapsed aside>*{display:none}
           var pyG = H / 2 + y1G * kG * zoom * fitScale;
           if (aG === 0) ctx.moveTo(pxG, pyG); else ctx.lineTo(pxG, pyG);
         }
-        ctx.strokeStyle = gi2 === 1 ? 'rgba(79,240,255,.22)' : 'rgba(79,240,255,.12)';
+        ctx.strokeStyle = gi2 === 1 ? 'rgba(79,240,255,' + (0.22 * ringsAlpha).toFixed(3) + ')' : 'rgba(79,240,255,' + (0.12 * ringsAlpha).toFixed(3) + ')';
         ctx.lineWidth = 1;
         ctx.setLineDash([5, 7]);
         ctx.stroke();
@@ -293,10 +354,11 @@ body.aside-collapsed aside>*{display:none}
     for (i = 0; i < segs.length; i++) {
       var s = segs[i];
       var selEdge = selected && (s.id1 === selected.id || s.id2 === selected.id);
-      var alpha = Math.max(0.05, Math.min(0.34, 0.42 - s.d / 2600)) * Math.min(1, s.w);
-      if (s.k === 'semantic' || s.k === 'recent') {
-        ctx.setLineDash([2, 6]);
-        ctx.lineDashOffset = -(tsec * (s.k === 'recent' ? 18 : 9)) % 8;
+      var alpha = Math.max(0.05, Math.min(0.34, 0.42 - s.d / 2600)) * Math.min(1, s.w) * (lowQ ? 0.8 : 1);
+      if (!dragging && !lowQ) {
+        ctx.setLineDash(s.k === 'semantic' || s.k === 'recent' ? [2, 6] : [2, 9]);
+        var spd = s.k === 'recent' ? 18 : (s.k === 'semantic' ? 10 : 5);
+        ctx.lineDashOffset = -(tsec * spd) % 9;
       } else ctx.setLineDash([]);
       ctx.strokeStyle = 'rgba(96,190,255,' + (selEdge ? 0.85 : alpha * 0.9).toFixed(3) + ')';
       ctx.lineWidth = selEdge ? 1.6 : 0.7;
@@ -324,10 +386,29 @@ body.aside-collapsed aside>*{display:none}
       else if (n.kind === 'recent') { ctx.fillStyle = 'rgba(255,255,255,' + Math.min(1, al + 0.2) + ')'; glow = '#ffffff'; }
       else if (n.kind === 'archive') { ctx.fillStyle = 'rgba(178,120,255,' + Math.min(1, al + 0.18) + ')'; glow = '#b278ff'; }
       else { ctx.fillStyle = 'rgba(64,170,255,' + Math.min(1, al + 0.1) + ')'; glow = '#40aaff'; }
-      ctx.save();
-      ctx.shadowColor = glow; ctx.shadowBlur = 10 + (pp.k > 1 ? 6 : 0);
-      ctx.fill();
-      ctx.restore();
+      if (lowQ) {
+        ctx.fill();
+      } else {
+        ctx.save();
+        ctx.shadowColor = glow; ctx.shadowBlur = 10 + (pp.k > 1 ? 6 : 0);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      if (n === selected) {
+        ctx.beginPath();
+        ctx.arc(pp.x, pp.y, Math.max(2, r) + 5 + 2.5 * Math.sin(tsec * 3.2), 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(79,240,255,.75)';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      }
+      if (n === hovered && !lowQ) {
+        var hg = ctx.createRadialGradient(pp.x, pp.y, 0, pp.x, pp.y, Math.max(10, r * 6));
+        hg.addColorStop(0, 'rgba(79,240,255,.18)');
+        hg.addColorStop(1, 'rgba(79,240,255,0)');
+        ctx.fillStyle = hg;
+        ctx.beginPath(); ctx.arc(pp.x, pp.y, Math.max(10, r * 6), 0, Math.PI * 2); ctx.fill();
+      }
 
       if (n.kind === 'recent' || n.kind === 'archive' || n.sub === 'diary') {
         ctx.beginPath(); ctx.arc(pp.x, pp.y, Math.max(1.6, r) + (n.sub === 'diary' ? 5 : 3), 0, Math.PI * 2);
@@ -470,6 +551,8 @@ body.aside-collapsed aside>*{display:none}
     } else {
       var r = cv.getBoundingClientRect();
       hovered = pick(e.clientX - r.left, e.clientY - r.top);
+      parTX = ((e.clientX - r.left) / Math.max(1, r.width) - 0.5) * 18;
+      parTY = ((e.clientY - r.top) / Math.max(1, r.height) - 0.5) * 14;
       cv.style.cursor = hovered ? 'pointer' : 'grab';
     }
   }
@@ -668,6 +751,7 @@ body.aside-collapsed aside>*{display:none}
 
   function build(mem) {
     window.lastMem = mem;
+    ringsAlpha = 0;
     var useCluster = true;
     try { useCluster = (localStorage.getItem('wave.cluster') !== '0'); } catch (e) {}
 
@@ -927,6 +1011,178 @@ body.aside-collapsed aside>*{display:none}
       btn.classList.toggle('on', next);
       if (window.lastMem && window.__waveBuild) { window.__waveBuild(window.lastMem); }
     });
+  })();
+
+  // ================= 情绪页 =================
+  var moodCv = document.getElementById('moodCv');
+  var moodPage = document.getElementById('moodPage');
+  var moodData = null;
+  var moodError = false;
+
+  function moodCtx() { return moodCv ? moodCv.getContext('2d') : null; }
+
+  function openMood() {
+    if (!moodPage) return;
+    moodPage.classList.add('on');
+    loadMood();
+  }
+  function closeMood() {
+    if (moodPage) moodPage.classList.remove('on');
+  }
+
+  function loadMood() {
+    var p = (window.__waveToken ? ('?token=' + encodeURIComponent(window.__waveToken)) : location.search);
+    fetch('/api/mood' + p, { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { moodData = d; paintMoodSide(); drawMoodPage();
+        if (location.search.indexOf('moodcheck=1') >= 0) {
+          var sd = (d.self && d.self.days) || [], ud = (d.user && d.user.days) || [];
+          document.title = 'MOOD self=' + sd.length + ' user=' + ud.length +
+            ' v=' + ((d.self || {}).v) + ' label=' + ((d.self || {}).label);
+        } })
+      .catch(function () { moodData = null; moodError = true; drawMoodPage(); });
+  }
+
+  function paintMoodSide() {
+    if (!moodData) return;
+    var me = moodData.self || {};
+    var you = moodData.user || {};
+    var set = function (id, txt) { var el = document.getElementById(id); if (el) el.textContent = txt; };
+    set('moodMine', (me.label || '平静') + (typeof me.v === 'number' ? ' ' + (me.v >= 0 ? '+' : '') + me.v.toFixed(2) : ''));
+    set('moodMineMeta', me.n ? ('已记录 ' + me.n + ' 条') : '还没有数据');
+    var last = (you.days && you.days.length) ? you.days[you.days.length - 1] : null;
+    set('moodYours', last ? ((last.avg >= 0 ? '+' : '') + last.avg.toFixed(2)) : '—');
+    set('moodYoursMeta', last ? ('最近一天 ' + last.d + ' · ' + last.n + ' 条') : '还没有数据');
+    set('moodCouple', me.couple != null ? String(me.couple) : '—');
+    set('moodDecay', me.decay != null ? String(me.decay) : '—');
+    set('moodTune', me.tune != null ? String(me.tune) : '—');
+  }
+
+  function drawMoodPage() {
+    if (!moodCv) return;
+    var d = window.devicePixelRatio || 1;
+    var box = moodCv.getBoundingClientRect();
+    var W = Math.max(200, box.width), H = Math.max(160, box.height);
+    moodCv.width = Math.round(W * d); moodCv.height = Math.round(H * d);
+    var c = moodCtx();
+    c.setTransform(d, 0, 0, d, 0, 0);
+    c.clearRect(0, 0, W, H);
+
+    var padL = 54, padR = 26, padT = 26, padB = 86;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var mid = padT + plotH / 2;
+
+    // 网格
+    c.strokeStyle = 'rgba(79,240,255,.07)'; c.lineWidth = 1;
+    for (var g = 0; g <= 4; g++) {
+      var y = padT + plotH * g / 4;
+      c.beginPath(); c.moveTo(padL, y); c.lineTo(W - padR, y); c.stroke();
+    }
+    c.strokeStyle = 'rgba(79,240,255,.22)';
+    c.beginPath(); c.moveTo(padL, mid); c.lineTo(W - padR, mid); c.stroke();
+
+    c.fillStyle = 'rgba(140,170,210,.85)';
+    c.font = '10px "Microsoft YaHei",sans-serif';
+    c.textAlign = 'right';
+    c.fillText('+1', padL - 8, padT + 8);
+    c.fillText('0', padL - 8, mid + 3);
+    c.fillText('-1', padL - 8, padT + plotH + 2);
+
+    if (!moodData) {
+      c.fillStyle = 'rgba(140,170,210,.8)'; c.textAlign = 'center';
+      c.font = '12px "Microsoft YaHei",sans-serif';
+      c.fillText('读取中…', W / 2, mid);
+      return;
+    }
+
+    var selfDays = ((moodData.self || {}).days) || [];
+    var userDays = ((moodData.user || {}).days) || [];
+    var days = [];
+    var seen = {};
+    selfDays.concat(userDays).forEach(function (x) { if (!seen[x.d]) { seen[x.d] = 1; days.push(x.d); } });
+    days.sort();
+    if (!days.length) {
+      c.fillStyle = 'rgba(140,170,210,.8)'; c.textAlign = 'center';
+      c.font = '12px "Microsoft YaHei",sans-serif';
+      c.fillText(moodError ? '读取失败：面板没有 /api/mood 转发时，请用 8788 打开' : '还没有情绪数据，聊几句就有了', W / 2, mid - 6);
+      return;
+    }
+
+    var groupW = Math.min(plotW, days.length * 130);
+    var slot = groupW / days.length;
+    var startX = padL + (plotW - groupW) / 2;
+    var barW = Math.max(14, Math.min(40, slot * 0.5));
+    var yOf = function (v) { return padT + plotH * (1 - (v + 1) / 2); };
+
+    days.forEach(function (day, i) {
+      var x = startX + slot * (i + 0.5);
+      var sd = selfDays.filter(function (z) { return z.d === day; })[0];
+      if (sd) {
+        var y0 = mid, y1 = yOf(sd.avg);
+        var grd = c.createLinearGradient(0, Math.min(y0, y1), 0, Math.max(y0, y1));
+        if (sd.avg >= 0) { grd.addColorStop(0, 'rgba(79,240,255,.95)'); grd.addColorStop(1, 'rgba(79,240,255,.25)'); }
+        else { grd.addColorStop(0, 'rgba(255,120,200,.85)'); grd.addColorStop(1, 'rgba(255,120,200,.22)'); }
+        c.fillStyle = grd;
+        c.fillRect(x - barW / 2, Math.min(y0, y1), barW, Math.abs(y1 - y0));
+        c.fillStyle = 'rgba(190,240,255,.9)';
+        c.font = '9px ui-monospace,monospace'; c.textAlign = 'center';
+        c.fillText((sd.avg >= 0 ? '+' : '') + sd.avg.toFixed(2), x, (sd.avg >= 0 ? y1 - 5 : y1 + 11));
+      }
+      c.fillStyle = 'rgba(150,180,220,.85)';
+      c.font = '11px "Microsoft YaHei",sans-serif';
+      c.textAlign = 'center';
+      c.fillText(day, x, padT + plotH + 20);
+    });
+
+    // 你的曲线
+    var pts = [];
+    days.forEach(function (day, i) {
+      var ud = userDays.filter(function (z) { return z.d === day; })[0];
+      if (!ud) return;
+      pts.push({ x: startX + slot * (i + 0.5), y: yOf(ud.avg) });
+    });
+    if (pts.length) {
+      c.beginPath();
+      pts.forEach(function (p, i) { if (i === 0) c.moveTo(p.x, p.y); else c.lineTo(p.x, p.y); });
+      c.strokeStyle = 'rgba(178,120,255,.9)'; c.lineWidth = 1.8; c.stroke();
+      pts.forEach(function (p) {
+        c.beginPath(); c.arc(p.x, p.y, 2.6, 0, Math.PI * 2);
+        c.fillStyle = '#b278ff'; c.fill();
+      });
+    }
+
+    // 今日逐小时
+    var hourly = (moodData.hourly || {}).self || [];
+    var hb = 34, hy = H - 30;
+    c.fillStyle = 'rgba(140,170,210,.75)';
+    c.font = '9.5px "Microsoft YaHei",sans-serif'; c.textAlign = 'left';
+    c.fillText('今天逐小时（她）', padL, hy - hb - 8);
+    var hw = groupW / 24;
+    for (var h = 0; h < 24; h++) {
+      var v = hourly[h];
+      if (typeof v !== 'number') continue;
+      var hx = startX + hw * h + 1;
+      var barH = Math.max(2, Math.abs(v) * hb);
+      c.fillStyle = v >= 0 ? 'rgba(79,240,255,.55)' : 'rgba(255,120,200,.5)';
+      c.fillRect(hx, v >= 0 ? hy - barH : hy, Math.max(2, hw - 2), barH);
+    }
+    c.strokeStyle = 'rgba(79,240,255,.2)'; c.beginPath(); c.moveTo(padL, hy); c.lineTo(W - padR, hy); c.stroke();
+  }
+
+  (function () {
+    var openBtn = document.getElementById('openMood');
+    if (location.search.indexOf('moodcheck=1') >= 0) { setTimeout(openMood, 600); }
+    var backBtn = document.getElementById('moodBack');
+    if (openBtn) openBtn.addEventListener('click', openMood);
+    if (backBtn) backBtn.addEventListener('click', closeMood);
+    window.addEventListener('resize', function () {
+      if (moodPage && moodPage.classList.contains('on')) drawMoodPage();
+    });
+    var mm = window.__waveToken || (function () {
+      var m = /[?&]token=([^&]+)/.exec(location.search);
+      return m ? decodeURIComponent(m[1]) : '';
+    })();
+    window.__waveToken = mm;
   })();
 </script>
 </body>

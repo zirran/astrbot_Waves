@@ -179,5 +179,70 @@
     "type": "int",
     "description": "压缩前快照保留份数",
     "default": 10
+  },
+  "diary_digest_every": {
+    "type": "int",
+    "description": "多少篇日记合成年度合集",
+    "default": 24
+  },
+  "emotion_sticker": {
+    "type": "string",
+    "description": "表情包：auto（检测外部插件）/ on / off",
+    "default": "auto"
+  },
+  "group_max_per_hour": {
+    "type": "int",
+    "description": "群聊每小时最多回几条，超了直接不回",
+    "default": 6
+  },
+  "group_min_gap_seconds": {
+    "type": "int",
+    "description": "群聊两条回复的最小间隔（秒）",
+    "default": 8
+  },
+  "platform_allow": {
+    "type": "string",
+    "description": "允许做记忆的平台（逗号分隔）",
+    "default": "snowluma,qq_official"
+  },
+  "private_markers": {
+    "type": "string",
+    "description": "私聊会话的标记片段",
+    "default": "FriendMessage,private"
+  },
+  "recall_score_floor": {
+    "type": "float",
+    "description": "注入分数门槛（自适应 0.8–1.5）",
+    "default": 1.2
+  },
+  "recall_inject_chars": {
+    "type": "int",
+    "description": "单次注入字符预算（调优器 140–420）",
+    "default": 240
+  },
+  "self_review_days": {
+    "type": "int",
+    "description": "定期自审周期（天）",
+    "default": 7
+  },
+  "split_paragraphs": {
+    "type": "bool",
+    "description": "回复里的空行是否拆成多条消息",
+    "default": true
+  },
+  "tag_semantic_min": {
+    "type": "float",
+    "description": "语义标签匹配阈值",
+    "default": 0.6
+  },
+  "web_host": {
+    "type": "string",
+    "description": "星图监听地址（容器内需 0.0.0.0，宿主机已只绑 127.0.0.1）",
+    "default": "0.0.0.0"
+  },
+  "web_token": {
+    "type": "string",
+    "description": "星图访问令牌，留空则自动生成",
+    "default": ""
   }
 }
