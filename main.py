@@ -1,3 +1,12 @@
+"""分层记忆 L1-L4 + 联想（v2）
+
+L1 最近十句：交给上下文
+L2 闲聊：便宜模型打分 + 一句话 + 自动标签，24 小时过期
+L3 重要的事：抽事实 + 标签，永久写进人格
+L4 全量原文：本地存档，可搜
+联想：记忆点之间按「标签重合 + 文本相似」连边，回复时按当前话题检索并扩展一跳
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -1817,8 +1826,16 @@ class MemoryLayersPlugin(Star):
                 "intensity": round(intensity, 2), "persist": persist, "rhetoric": rhetoric}
 
     def _query_valence(self, text: str) -> float:
-        """这句话的情绪倾向（-1 ~ 1）。"""
-        return self._emotion_analysis(text)["v"]
+        """这句话的情绪倾向（-1 ~ 1），弱信号会与上一句平滑，避免单字跳变。"""
+        try:
+            v = float(self._emotion_analysis(text).get("v") or 0.0)
+            ema = self.state.get("valence_ema")
+            if isinstance(ema, (int, float)) and abs(v) < 0.45:
+                v = round(0.65 * v + 0.35 * float(ema), 3)
+            self.state["valence_ema"] = v
+            return v
+        except Exception:
+            return 0.0
 
     def _emotion_of(self, text: str) -> dict:
         """给一段话打情绪标签：{label, v}。"""
@@ -2485,7 +2502,7 @@ class MemoryLayersPlugin(Star):
     def _private_chat_ok(self, umo: str) -> bool:
         """兼容多个平台：snowluma(OneBot) 与 qq_official(C2C)。"""
         allows = [x.strip() for x in str(self.cfg("platform_allow", "snowluma,qq_official") or "").split(",") if x.strip()]
-        marks = [x.strip() for x in str(self.cfg("private_markers", "FriendMessage,C2CMessage") or "").split(",") if x.strip()]
+        marks = [x.strip() for x in str(self.cfg("private_markers", "FriendMessage,C2CMessage,private") or "").split(",") if x.strip()]
         if allows and not any(a in umo for a in allows):
             return False
         return any(m in umo for m in marks)
@@ -2682,11 +2699,20 @@ class MemoryLayersPlugin(Star):
         except Exception as exc:
             logger.debug(f"[Wave] 缓存调优跳过: {exc}")
 
+    def _bump_stage(self, name: str) -> None:
+        try:
+            st = self.state.setdefault("recall_stats", {})
+            stages = st.setdefault("stages", {"normal": 0, "wide": 0, "deep": 0})
+            stages[name] = int(stages.get(name, 0)) + 1
+        except Exception:
+            pass
+
     async def _recall(self, query: str) -> list[dict]:
         """正常召回；一条都没有时放宽门槛、带上上一句话再试一次。"""
         try:
             hits = await self.retrieve_async(query)
             if hits:
+                self._bump_stage("normal")
                 return hits
             if len([c for c in query if not c.isspace()]) < 6:
                 return []
@@ -2696,9 +2722,16 @@ class MemoryLayersPlugin(Star):
             try:
                 self.state["score_floor"] = round(max(0.55, floor * 0.72), 2)
                 hits = await self.retrieve_async(wider)
+                if not hits:
+                    # 第三段：再降一档，只用原句，救回弱关联
+                    self.state["score_floor"] = 0.55
+                    hits = await self.retrieve_async(query)
+                    if hits:
+                        self._bump_stage("deep")
             finally:
                 self.state["score_floor"] = floor
             if hits:
+                self._bump_stage("wide")
                 _rs = self.state.setdefault("recall_stats", {})
                 _rs["wide"] = int(_rs.get("wide", 0)) + 1
                 logger.debug(f"[Wave] 放宽门槛召回 {len(hits)} 条：{query[:20]}")
@@ -3275,13 +3308,267 @@ class MemoryLayersPlugin(Star):
                     v = emo.get("v")
                     if isinstance(v, (int, float)):
                         self._self_mood_update(float(v), 0.0, "", float(n.get("ts") or 0))
+            try:
+                self._backfill_from_archive(15)
+            except Exception:
+                pass
             if written:
                 logger.info(f"[Wave] 情绪流水回填 {written} 条（来自 L2）")
         except Exception as exc:
             logger.debug(f"[Wave] 情绪回填跳过: {exc}")
 
+    def _backfill_from_archive(self, days: int = 15) -> int:
+        """用 L4 存档里你的原话回填情绪流水，让曲线覆盖真实历史而不是只有两天。"""
+        try:
+            log = self.data_dir / "mood_log.jsonl"
+            existing = set()
+            if log.exists():
+                for ln in log.read_text(encoding="utf-8").splitlines():
+                    try:
+                        r = json.loads(ln)
+                    except Exception:
+                        continue
+                    existing.add((round(float(r.get("ts") or 0)), str(r.get("text") or "")[:20]))
+            added = []
+            arch = self.data_dir / "archive"
+            files = sorted(arch.glob("*.jsonl"))[-days:]
+            for f in files:
+                try:
+                    lines = f.read_text(encoding="utf-8").splitlines()
+                except Exception:
+                    continue
+                for ln in lines:
+                    try:
+                        rec = json.loads(ln)
+                    except Exception:
+                        continue
+                    if rec.get("role") != "user":
+                        continue
+                    t = str(rec.get("text") or "").strip()
+                    if len(t) < 4 or t.startswith("[") or "系统任务" in t:
+                        continue
+                    ts = float(rec.get("ts") or 0)
+                    if not ts:
+                        continue
+                    key = (round(ts), t[:20])
+                    if key in existing:
+                        continue
+                    r = self._emotion_analysis(t)
+                    v = float(r.get("v") or 0)
+                    added.append({"ts": round(ts, 1), "v": round(v, 2),
+                                  "label": r.get("label") or "", "text": t[:40],
+                                  "backfill": "archive"})
+                    existing.add(key)
+            if not added:
+                return 0
+            added.sort(key=lambda x: x["ts"])
+            with log.open("a", encoding="utf-8") as fh:
+                for a in added:
+                    fh.write(json.dumps(a, ensure_ascii=False) + "\n")
+            # 用全部历史重放她的情绪
+            try:
+                rows = []
+                for ln in log.read_text(encoding="utf-8").splitlines():
+                    try:
+                        r = json.loads(ln)
+                    except Exception:
+                        continue
+                    rows.append((float(r.get("ts") or 0), float(r.get("v") or 0)))
+                rows.sort()
+                sp = self.data_dir / "self_mood.jsonl"
+                if sp.exists():
+                    sp.unlink()
+                self.state["self_mood"] = {"v": 0.05, "arousal": 0.4, "updated": time.time(), "n": 0}
+                for ts, v in rows:
+                    self._self_mood_update(v, 0.0, "", ts)
+            except Exception as exc:
+                logger.debug(f"[Wave] 自我情绪重放失败: {exc}")
+            logger.info(f"[Wave] 情绪流水按存档回填 {len(added)} 条（{len(files)} 天）")
+            return len(added)
+        except Exception as exc:
+            logger.debug(f"[Wave] 存档回填失败: {exc}")
+            return 0
+
+    def _usage_json(self, days: int = 7) -> dict:
+        """账本的 JSON 版，给实验室页面用。"""
+        out = {"days": [], "totals": {}, "prices": {}}
+        try:
+            p_cached = float(self.cfg("price_cached_per_m", 0.02) or 0.02)
+            p_input = float(self.cfg("price_input_per_m", 1.0) or 1.0)
+            p_out = float(self.cfg("price_output_per_m", 4.0) or 4.0)
+            out["prices"] = {"cached": p_cached, "input": p_input, "output": p_out}
+            db = Path(self.data_dir).parent.parent / "data_v4.db"
+            if not db.exists():
+                return out
+            con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=3)
+            try:
+                rows = con.execute(
+                    "select date(created_at) d, sum(token_input_cached), sum(token_input_other), "
+                    "sum(token_output), count(*) from provider_stats group by d order by d desc limit ?",
+                    (max(1, min(30, int(days or 7))),),
+                ).fetchall()
+            finally:
+                con.close()
+            tot = {"n": 0, "cached": 0, "input": 0, "out": 0, "cost": 0.0}
+            for d, c, o, o2, n in rows:
+                c = int(c or 0); o = int(o or 0); o2 = int(o2 or 0); n = int(n or 0)
+                total_in = c + o
+                hit = (c / total_in) if total_in else 0.0
+                cost = c / 1e6 * p_cached + o / 1e6 * p_input + o2 / 1e6 * p_out
+                out["days"].append({"d": d, "n": n, "cached": c, "input": o,
+                                    "out": o2, "hit": round(hit, 4), "cost": round(cost, 4)})
+                tot["n"] += n; tot["cached"] += c; tot["input"] += o
+                tot["out"] += o2; tot["cost"] += cost
+            ti = tot["cached"] + tot["input"]
+            tot["hit"] = round(tot["cached"] / ti, 4) if ti else 0.0
+            tot["cost"] = round(tot["cost"], 3)
+            tot["tokens"] = ti + tot["out"]
+            out["totals"] = tot
+        except Exception as exc:
+            out["error"] = str(exc)
+        return out
+
+    def _web_mem_search(self, q: str = "", layer: str = "all", limit: int = 30) -> dict:
+        """实验室搜索：L2 / L3 / 归档，返回统一结构。"""
+        q = str(q or "").strip()
+        limit = max(1, min(100, int(limit or 30)))
+        out = {"q": q, "layer": layer, "facts": [], "notes": [], "archive": []}
+        try:
+            if layer in ("all", "l3"):
+                for f in self.l3:
+                    txt = str(f.get("text") or "")
+                    if q and q not in txt and not any(q in str(t) for t in (f.get("tags") or [])):
+                        continue
+                    out["facts"].append({
+                        "id": f.get("id") or text_key(txt),
+                        "text": txt, "tags": f.get("tags") or [],
+                        "hits": int(f.get("hits") or 0),
+                        "conf": f.get("confidence"),
+                        "parked": bool(f.get("parked")),
+                        "pinned": bool(f.get("pinned")),
+                        "ts": f.get("ts") or 0,
+                    })
+            if layer in ("all", "l2"):
+                now = time.time()
+                for n in self.l2:
+                    txt = str(n.get("summary") or "")
+                    if q and q not in txt:
+                        continue
+                    out["notes"].append({
+                        "id": n.get("id") or text_key(txt),
+                        "text": txt, "tags": n.get("tags") or [],
+                        "score": n.get("score"), "hits": int(n.get("hits") or 0),
+                        "expires_at": n.get("expires_at") or 0,
+                        "expired": float(n.get("expires_at") or 0) <= now,
+                    })
+            if layer in ("all", "archive") and q:
+                for rec in (self.search_sync(q, 20) or []):
+                    out["archive"].append({
+                        "text": str(rec.get("text") or "")[:200],
+                        "role": rec.get("role"), "ts": rec.get("ts"),
+                    })
+        except Exception as exc:
+            out["error"] = str(exc)
+        out["facts"] = sorted(out["facts"], key=lambda x: (-x["hits"], -float(x["ts"] or 0)))[:limit]
+        out["notes"] = out["notes"][:limit]
+        out["archive"] = out["archive"][:limit]
+        return out
+
+    def _web_mem_action(self, payload: dict) -> dict:
+        """实验室写操作：作废 / 置顶 / 取消置顶 / 删除 L2。"""
+        try:
+            op = str(payload.get("op") or "")
+            mid = str(payload.get("id") or "")
+            if not mid:
+                return {"ok": False, "error": "missing id"}
+            for f in self.l3:
+                fid = str(f.get("id") or text_key(str(f.get("text") or "")))
+                if fid != mid:
+                    continue
+                if op == "void":
+                    f["confidence"] = 0
+                    f["hits"] = 0
+                elif op == "pin":
+                    f["pinned"] = True
+                    f["parked"] = False
+                    f["confidence"] = 1.0
+                elif op == "unpin":
+                    f["pinned"] = False
+                elif op == "park":
+                    f["parked"] = True
+                    f["park_reason"] = "manual"
+                else:
+                    return {"ok": False, "error": "unknown op"}
+                self._save(self.l3_path, self.l3)
+                self._save_state()
+                try:
+                    self._sync_persona(force=True)
+                except Exception:
+                    pass
+                return {"ok": True, "op": op, "id": mid}
+            if op == "drop":
+                before = len(self.l2)
+                self.l2 = [n for n in self.l2
+                           if str(n.get("id") or text_key(str(n.get("summary") or ""))) != mid]
+                if len(self.l2) != before:
+                    self._save(self.l2_path, self.l2)
+                    return {"ok": True, "op": op, "id": mid}
+            return {"ok": False, "error": "not found"}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def _usage_report(self, days: int = 5) -> str:
+        """账本：读 provider_stats，按天汇总并估算费用。"""
+        try:
+            db = Path(self.data_dir).parent.parent / "data_v4.db"
+            if not db.exists():
+                return "拿不到 provider_stats。"
+            con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=3)
+            try:
+                rows = con.execute(
+                    "select date(created_at) d, sum(token_input_cached), sum(token_input_other), "
+                    "sum(token_output), count(*) from provider_stats group by d order by d desc limit ?",
+                    (max(1, min(30, days)),),
+                ).fetchall()
+            finally:
+                con.close()
+            if not rows:
+                return "还没有用量记录。"
+            p_cached = float(self.cfg("price_cached_per_m", 0.02) or 0.02)
+            p_input = float(self.cfg("price_input_per_m", 1.0) or 1.0)
+            p_out = float(self.cfg("price_output_per_m", 4.0) or 4.0)
+            lines = ["日期        请求  命中率  输入(万)  缓存(万)  输出(万)  约¥"]
+            total_cost = 0.0
+            for d, c, o, out_, n in rows:
+                c = int(c or 0); o = int(o or 0); out_ = int(out_ or 0)
+                tot = c + o
+                hit = (c / tot) if tot else 0.0
+                cost = c / 1e6 * p_cached + o / 1e6 * p_input + out_ / 1e6 * p_out
+                total_cost += cost
+                lines.append(f"{d}  {n:4d}  {hit*100:5.1f}%  {tot/1e4:7.1f}  {c/1e4:7.1f}  {out_/1e4:7.1f}  {cost:5.2f}")
+            lines.append(f"合计约 ¥{total_cost:.2f}（单价：缓存 {p_cached}/M，输入 {p_input}/M，输出 {p_out}/M）")
+            return "\n".join(lines)
+        except Exception as exc:
+            return f"账本读取失败：{exc}"
+
+    def _ensure_history(self) -> int:
+        try:
+            last = float(self.state.get("archive_backfilled_at") or 0)
+            if time.time() - last < 6 * 3600:
+                return 0
+            n = self._backfill_from_archive(15)
+            self.state["archive_backfilled_at"] = time.time()
+            self._save_state()
+            return n
+        except Exception:
+            return 0
+
     def _web_mood(self) -> dict:
         """给星图的情绪页用：她 + 你 两路情绪的日/时聚合。"""
+        try:
+            self._ensure_history()
+        except Exception:
+            pass
         now = time.time()
         today = datetime.now().strftime("%m-%d")
         out = {"now": now, "today": today, "self": {}, "user": {}}
@@ -3365,6 +3652,25 @@ class MemoryLayersPlugin(Star):
             "waves": waves,
         }
 
+    @staticmethod
+    def _local_client(addr: str) -> bool:
+        """回环或私网来源视为本机访问：端口已只绑 127.0.0.1，不必再要 token。"""
+        try:
+            host = str(addr or "").split("%")[0]
+            if host in ("127.0.0.1", "::1", "localhost"):
+                return True
+            parts = [int(x) for x in host.split(".")[:4]]
+            if len(parts) == 4:
+                if parts[0] == 10:
+                    return True
+                if parts[0] == 192 and parts[1] == 168:
+                    return True
+                if parts[0] == 172 and 16 <= parts[1] <= 31:
+                    return True
+        except Exception:
+            return False
+        return False
+
     def _start_web(self) -> None:
         try:
             import http.server
@@ -3382,14 +3688,97 @@ class MemoryLayersPlugin(Star):
                 def log_message(self, *args):
                     return
 
+                def do_POST(self):
+                    try:
+                        from urllib.parse import urlparse, parse_qs
+                        u = urlparse(self.path)
+                        if not u.path.startswith("/api/mem"):
+                            self.send_response(404)
+                            self.end_headers()
+                            return
+                        token = str(plugin.cfg("web_token", "") or plugin.state.get("web_token") or "").strip()
+                        qs = parse_qs(u.query)
+                        got = (qs.get("token") or [""])[0] or self.headers.get("X-Wave-Token", "")
+                        if token and got != token and not plugin._local_client(self.client_address[0]):
+                            self.send_response(401)
+                            self.end_headers()
+                            self.wfile.write(b'{"error":"unauthorized"}')
+                            return
+                        length = int(self.headers.get("Content-Length") or 0)
+                        raw = self.rfile.read(min(length, 8192)) if length else b"{}"
+                        try:
+                            payload = json.loads(raw.decode("utf-8") or "{}")
+                        except Exception:
+                            payload = {}
+                        result = plugin._web_mem_action(payload)
+                        body = json.dumps(result, ensure_ascii=False).encode("utf-8")
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json; charset=utf-8")
+                        self.send_header("Content-Length", str(len(body)))
+                        self.end_headers()
+                        self.wfile.write(body)
+                    except Exception as exc:
+                        try:
+                            self.send_response(500)
+                            self.end_headers()
+                            self.wfile.write(str(exc).encode("utf-8"))
+                        except Exception:
+                            pass
+
                 def do_GET(self):
+                    if self.path.startswith("/api/usage"):
+                        token = str(plugin.cfg("web_token", "") or plugin.state.get("web_token") or "").strip()
+                        from urllib.parse import urlparse, parse_qs
+                        qs = parse_qs(urlparse(self.path).query)
+                        got = (qs.get("token") or [""])[0] or self.headers.get("X-Wave-Token", "")
+                        if token and got != token and not plugin._local_client(self.client_address[0]):
+                            self.send_response(401)
+                            self.end_headers()
+                            self.wfile.write(b'{"error":"unauthorized"}')
+                            return
+                        try:
+                            days = int((qs.get("days") or ["7"])[0])
+                        except Exception:
+                            days = 7
+                        body = json.dumps(plugin._usage_json(days), ensure_ascii=False).encode("utf-8")
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json; charset=utf-8")
+                        self.send_header("Content-Length", str(len(body)))
+                        self.send_header("Cache-Control", "no-store")
+                        self.end_headers()
+                        self.wfile.write(body)
+                        return
+                    if self.path.startswith("/api/mem"):
+                        token = str(plugin.cfg("web_token", "") or plugin.state.get("web_token") or "").strip()
+                        from urllib.parse import urlparse, parse_qs
+                        qs = parse_qs(urlparse(self.path).query)
+                        got = (qs.get("token") or [""])[0] or self.headers.get("X-Wave-Token", "")
+                        if token and got != token and not plugin._local_client(self.client_address[0]):
+                            self.send_response(401)
+                            self.end_headers()
+                            self.wfile.write(b'{"error":"unauthorized"}')
+                            return
+                        q = (qs.get("q") or [""])[0]
+                        layer = (qs.get("layer") or ["all"])[0]
+                        try:
+                            limit = int((qs.get("limit") or ["30"])[0])
+                        except Exception:
+                            limit = 30
+                        body = json.dumps(plugin._web_mem_search(q, layer, limit), ensure_ascii=False).encode("utf-8")
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/json; charset=utf-8")
+                        self.send_header("Content-Length", str(len(body)))
+                        self.send_header("Cache-Control", "no-store")
+                        self.end_headers()
+                        self.wfile.write(body)
+                        return
                     if self.path.startswith("/api/mood"):
                         token = str(plugin.cfg("web_token", "") or plugin.state.get("web_token") or "").strip()
                         if token:
                             from urllib.parse import urlparse, parse_qs
                             qs = parse_qs(urlparse(self.path).query)
                             got = (qs.get("token") or [""])[0] or self.headers.get("X-Wave-Token", "")
-                            if got != token:
+                            if token and got != token and not plugin._local_client(self.client_address[0]):
                                 self.send_response(401)
                                 self.end_headers()
                                 self.wfile.write(b'{"error":"unauthorized"}')
@@ -3412,7 +3801,7 @@ class MemoryLayersPlugin(Star):
                             from urllib.parse import urlparse, parse_qs
                             qs = parse_qs(urlparse(self.path).query)
                             got = (qs.get("token") or [""])[0] or self.headers.get("X-Wave-Token", "")
-                            if got != token:
+                            if token and got != token and not plugin._local_client(self.client_address[0]):
                                 self.send_response(401)
                                 self.end_headers()
                                 self.wfile.write(b'{"error":"unauthorized"}')
@@ -3476,6 +3865,14 @@ class MemoryLayersPlugin(Star):
         try:
             await asyncio.to_thread(self._prune_notes)
             await asyncio.to_thread(self.dedupe_facts_sync)
+            await asyncio.to_thread(self._ensure_history)
+            try:
+                _cap = self._int("fact_capacity", 120, 20)
+                _active = sum(1 for f in self.l3 if not f.get("parked"))
+                if _active > int(_cap * 1.3):
+                    await asyncio.to_thread(self.trim_facts_sync, _cap)
+            except Exception:
+                pass
         except Exception:
             pass
         logger.info(
@@ -3756,6 +4153,15 @@ class MemoryLayersPlugin(Star):
                 pass
         except Exception:
             pass
+
+    @filter.command("账本")
+    async def ledger_cmd(self, event: AstrMessageEvent):
+        raw = (event.message_str or "").replace("/账本", "").strip()
+        try:
+            days = int(raw) if raw else 5
+        except Exception:
+            days = 5
+        yield event.plain_result("```\n" + self._usage_report(days) + "\n```")
 
     @filter.command("表情")
     async def sticker_cmd(self, event: AstrMessageEvent):

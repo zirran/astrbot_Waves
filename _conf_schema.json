@@ -244,5 +244,20 @@
     "type": "string",
     "description": "星图访问令牌，留空则自动生成",
     "default": ""
+  },
+  "price_cached_per_m": {
+    "type": "float",
+    "description": "缓存命中输入单价（元/百万 token）",
+    "default": 0.02
+  },
+  "price_input_per_m": {
+    "type": "float",
+    "description": "未命中输入单价（元/百万 token）",
+    "default": 1.0
+  },
+  "price_output_per_m": {
+    "type": "float",
+    "description": "输出单价（元/百万 token）",
+    "default": 4.0
   }
 }

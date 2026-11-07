@@ -89,17 +89,108 @@ body.aside-collapsed aside>*{display:none}
 #moodSide{width:280px;border-left:1px solid var(--line);padding:16px 18px;font:12.5px/1.9 "Microsoft YaHei",sans-serif;color:#cfe3ff;overflow:auto}
 #moodSide h3{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);margin:18px 0 6px;font-weight:700}
 #moodSide h3:first-child{margin-top:0}
-#moodSide b{color:#4ff0ff;font-weight:700}
+#moodSide b{color:var(--ink);font-weight:700}
 #moodSide .big{font-size:26px;font-weight:900;color:#eafcff;letter-spacing:.02em}
 #moodSide .row{display:flex;justify-content:space-between;gap:10px}
 #moodLegend{display:flex;gap:16px;font-size:11px;color:var(--gray);padding:8px 20px 12px}
 #moodLegend i{display:inline-block;width:10px;height:10px;margin-right:5px;vertical-align:middle}
 </style>
+
+<style id="ef-theme">
+:root{
+  --paper:#F4F4F2; --board:#FFFFFF; --ink:#161616; --gray:#6E6E68;
+  --line:#D8D8D2; --accent:#FFFA00; --panel:#FFFFFF;
+  --treeH:200px; --asideW:326px;
+}
+body{
+  background:
+    radial-gradient(900px 520px at 88% -10%, rgba(22,22,22,.05) 0, rgba(22,22,22,0) 60%),
+    linear-gradient(180deg,#F7F7F5 0%, #F4F4F2 60%, #EFEFEC 100%) !important;
+  color:var(--ink) !important;
+  font-family:"Saira","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif !important;
+}
+body::before{
+  background-image:linear-gradient(rgba(22,22,22,.045) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(22,22,22,.045) 1px,transparent 1px) !important;
+  opacity:.5 !important;
+}
+header{background:var(--board) !important;border-bottom:1px solid var(--line) !important;backdrop-filter:none !important}
+header .eyebrow,.sub{color:var(--gray) !important;letter-spacing:.14em !important;font-stretch:112%}
+header h1{color:var(--ink) !important;font-weight:900 !important;letter-spacing:.02em !important}
+header a.back{
+  color:var(--ink) !important;border:1px solid var(--ink) !important;background:transparent !important;
+  box-shadow:none !important;padding:6px 12px !important;
+  clip-path:polygon(0 0,calc(100% - 9px) 0,100% 9px,100% 100%,0 100%);
+}
+header a.back:hover{background:var(--accent) !important;color:var(--ink) !important}
+#openMood,#memLink{
+  background:var(--board) !important;color:var(--ink) !important;border:1px solid var(--ink) !important;
+  clip-path:polygon(0 0,calc(100% - 9px) 0,100% 9px,100% 100%,0 100%);
+}
+#openMood:hover,#memLink:hover{background:var(--accent) !important;color:var(--ink) !important}
+header .stat b,header .stat span{color:var(--ink) !important}
+#timebar button{
+  background:var(--board) !important;color:var(--gray) !important;border:1px solid var(--line) !important;
+  clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,0 100%);
+  box-shadow:none !important;
+}
+#timebar button:hover{background:#EDEDE8 !important;color:var(--ink) !important}
+#timebar button.on{background:var(--accent) !important;color:var(--ink) !important;border-color:var(--ink) !important}
+#q,#btnShot{
+  background:var(--board) !important;border:1px solid var(--line) !important;color:var(--ink) !important;
+  box-shadow:none !important;
+}
+#q:focus{border-color:var(--ink) !important;box-shadow:none !important}
+#btnShot:hover{background:var(--accent) !important}
+#zoomBar button,#panelBtns button{
+  background:var(--board) !important;border:1px solid var(--line) !important;color:var(--ink) !important;
+  clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,0 100%);
+  box-shadow:none !important;
+}
+#zoomBar button:hover,#panelBtns button:hover{background:var(--accent) !important;border-color:var(--ink) !important}
+#panelBtns button.on{background:var(--accent) !important;color:var(--ink) !important;border-color:var(--ink) !important;box-shadow:none !important}
+#legend,#hud{color:var(--gray) !important;background:transparent !important;font-family:"Saira",ui-monospace,monospace !important}
+#treeBox{
+  background:var(--board) !important;border-top:1px solid var(--ink) !important;
+  box-shadow:none !important;
+}
+#treeTip{color:var(--gray) !important}
+aside{
+  background:var(--board) !important;border-left:1px solid var(--line) !important;
+}
+aside .head{border-bottom:1px solid var(--line) !important}
+aside .head b{color:var(--ink) !important;font-weight:900 !important}
+#detail{color:var(--ink) !important;font-family:"Microsoft YaHei","Noto Sans SC",sans-serif !important;line-height:1.8}
+#detail .empty{color:var(--gray) !important}
+#detail h2{color:var(--ink) !important;border-left:4px solid var(--accent) !important;font-weight:900}
+#detail dt,dt{color:var(--gray) !important;letter-spacing:.12em}
+#detail dd,dd{color:var(--ink) !important}
+.chip{background:transparent !important;border:1px solid var(--ink) !important;color:var(--ink) !important;border-radius:0 !important}
+.chip.accent{background:var(--accent) !important;color:var(--ink) !important}
+.agebar{background:#EDEDE8 !important;border-radius:0 !important}
+.agebar i{background:var(--ink) !important}
+.links h3{color:var(--gray) !important;letter-spacing:.14em}
+.links li{border-top:1px solid var(--line) !important;color:var(--ink) !important}
+.links li:hover{background:#F0F0EA !important}
+#err{background:var(--accent) !important;color:var(--ink) !important;border:none !important;font-weight:700}
+#tip{background:var(--board) !important;border:1px solid var(--ink) !important;color:var(--ink) !important;box-shadow:none !important}
+#tip b{color:var(--ink) !important;font-weight:900}
+#moodPage{background:var(--paper) !important}
+#moodHead{background:var(--board) !important;border-bottom:1px solid var(--ink) !important}
+#moodHead h2{color:var(--ink) !important;font-weight:900 !important}
+#moodHead button{background:var(--board) !important;border:1px solid var(--ink) !important;color:var(--ink) !important;clip-path:polygon(0 0,calc(100% - 9px) 0,100% 9px,100% 100%,0 100%)}
+#moodHead button:hover{background:var(--accent) !important}
+#moodSide{background:var(--board) !important;border-left:1px solid var(--line) !important;color:var(--ink) !important}
+#moodSide .big{color:var(--ink) !important;font-weight:900}
+#moodSide h3{color:var(--gray) !important;letter-spacing:.14em}
+#moodLegend{color:var(--gray) !important;background:var(--board) !important;border-top:1px solid var(--line) !important}
+</style>
 </head>
 <body>
 <header>
-  <div><div class="eyebrow">Memory Constellation</div><h1>记忆星图</h1></div>
+  <div><div class="eyebrow">// MEMORY</div><h1>记忆星图</h1></div>
   <a class="back" href="/">返回控制台</a>
+    <a id="memLink" href="http://127.0.0.1:8788/mem.html" target="_blank" rel="noopener" style="background:rgba(178,120,255,.12);border:1px solid rgba(178,120,255,.45);color:#c9a6ff;padding:6px 12px;text-decoration:none;font:12px &quot;Microsoft YaHei&quot;,sans-serif;align-self:center">实验室</a>
     <button id="openMood" style="background:rgba(79,240,255,.12);border:1px solid rgba(79,240,255,.45);color:#4ff0ff;padding:6px 12px;cursor:pointer;font:12px &quot;Microsoft YaHei&quot;,sans-serif;align-self:center">情绪</button>
   <div class="stats">
     <div class="stat"><b id="sFacts">—</b><span>长期记忆</span></div>
@@ -138,7 +229,7 @@ body.aside-collapsed aside>*{display:none}
   <div id="tip"></div>
 <section id="moodPage">
   <div id="moodHead">
-    <span class="sub">Emotion</span>
+    <span class="sub">// EMOTION</span>
     <h2>情绪状态</h2>
     <button id="moodBack">← 回到星图</button>
   </div>
@@ -160,9 +251,8 @@ body.aside-collapsed aside>*{display:none}
     </aside>
   </div>
   <div id="moodLegend">
-    <span><i style="background:#4ff0ff"></i>她（柱）</span>
-    <span><i style="background:#b278ff"></i>你（线）</span>
-    <span style="color:#5d7characters"></span>
+    <span><i style="background:#161616"></i>她（柱）</span>
+    <span><i style="background:#6E6E68"></i>你（线）</span>
   </div>
 </section>
 <aside>
@@ -336,7 +426,7 @@ body.aside-collapsed aside>*{display:none}
           var pyG = H / 2 + y1G * kG * zoom * fitScale;
           if (aG === 0) ctx.moveTo(pxG, pyG); else ctx.lineTo(pxG, pyG);
         }
-        ctx.strokeStyle = gi2 === 1 ? 'rgba(79,240,255,' + (0.22 * ringsAlpha).toFixed(3) + ')' : 'rgba(79,240,255,' + (0.12 * ringsAlpha).toFixed(3) + ')';
+        ctx.strokeStyle = gi2 === 1 ? 'rgba(22,22,22,' + (0.22 * ringsAlpha).toFixed(3) + ')' : 'rgba(22,22,22,' + (0.12 * ringsAlpha).toFixed(3) + ')';
         ctx.lineWidth = 1;
         ctx.setLineDash([5, 7]);
         ctx.stroke();
@@ -360,7 +450,7 @@ body.aside-collapsed aside>*{display:none}
         var spd = s.k === 'recent' ? 18 : (s.k === 'semantic' ? 10 : 5);
         ctx.lineDashOffset = -(tsec * spd) % 9;
       } else ctx.setLineDash([]);
-      ctx.strokeStyle = 'rgba(96,190,255,' + (selEdge ? 0.85 : alpha * 0.9).toFixed(3) + ')';
+      ctx.strokeStyle = 'rgba(22,22,22,' + (selEdge ? 0.85 : alpha * 0.9).toFixed(3) + ')';
       ctx.lineWidth = selEdge ? 1.6 : 0.7;
       ctx.beginPath(); ctx.moveTo(s.a.x, s.a.y); ctx.lineTo(s.b.x, s.b.y); ctx.stroke();
     }
@@ -380,17 +470,17 @@ body.aside-collapsed aside>*{display:none}
       if (!_hit) al *= 0.12;
       ctx.beginPath();
       ctx.arc(pp.x, pp.y, Math.max(1.1, r), 0, Math.PI * 2);
-      var glow = '#4ff0ff';
-      if (n.kind === 'fact') { ctx.fillStyle = 'rgba(70,246,255,' + al + ')'; glow = '#46f6ff'; }
-      else if (n.sub === 'diary') { ctx.fillStyle = 'rgba(255,214,64,' + Math.min(1, al + 0.25) + ')'; glow = '#ffd640'; }
-      else if (n.kind === 'recent') { ctx.fillStyle = 'rgba(255,255,255,' + Math.min(1, al + 0.2) + ')'; glow = '#ffffff'; }
-      else if (n.kind === 'archive') { ctx.fillStyle = 'rgba(178,120,255,' + Math.min(1, al + 0.18) + ')'; glow = '#b278ff'; }
-      else { ctx.fillStyle = 'rgba(64,170,255,' + Math.min(1, al + 0.1) + ')'; glow = '#40aaff'; }
+      var glow = '#161616';
+      if (n.kind === 'fact') { ctx.fillStyle = 'rgba(22,22,22,' + al + ')'; glow = '#161616'; }
+      else if (n.sub === 'diary') { ctx.fillStyle = 'rgba(255,250,0,' + Math.min(1, al + 0.25) + ')'; glow = '#FFFA00'; }
+      else if (n.kind === 'recent') { ctx.fillStyle = 'rgba(168,168,162,' + Math.min(1, al + 0.2) + ')'; glow = '#ffffff'; }
+      else if (n.kind === 'archive') { ctx.fillStyle = 'rgba(92,90,120,' + Math.min(1, al + 0.18) + ')'; glow = '#5C5A78'; }
+      else { ctx.fillStyle = 'rgba(110,110,104,' + Math.min(1, al + 0.1) + ')'; glow = '#6E6E68'; }
       if (lowQ) {
         ctx.fill();
       } else {
         ctx.save();
-        ctx.shadowColor = glow; ctx.shadowBlur = 10 + (pp.k > 1 ? 6 : 0);
+        ctx.shadowBlur = 0;
         ctx.fill();
         ctx.restore();
       }
@@ -398,21 +488,21 @@ body.aside-collapsed aside>*{display:none}
       if (n === selected) {
         ctx.beginPath();
         ctx.arc(pp.x, pp.y, Math.max(2, r) + 5 + 2.5 * Math.sin(tsec * 3.2), 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(79,240,255,.75)';
+        ctx.strokeStyle = 'rgba(22,22,22,.85)';
         ctx.lineWidth = 1.2;
         ctx.stroke();
       }
       if (n === hovered && !lowQ) {
         var hg = ctx.createRadialGradient(pp.x, pp.y, 0, pp.x, pp.y, Math.max(10, r * 6));
-        hg.addColorStop(0, 'rgba(79,240,255,.18)');
-        hg.addColorStop(1, 'rgba(79,240,255,0)');
+        hg.addColorStop(0, 'rgba(22,22,22,.07)');
+        hg.addColorStop(1, 'rgba(22,22,22,0)');
         ctx.fillStyle = hg;
         ctx.beginPath(); ctx.arc(pp.x, pp.y, Math.max(10, r * 6), 0, Math.PI * 2); ctx.fill();
       }
 
       if (n.kind === 'recent' || n.kind === 'archive' || n.sub === 'diary') {
         ctx.beginPath(); ctx.arc(pp.x, pp.y, Math.max(1.6, r) + (n.sub === 'diary' ? 5 : 3), 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(200,235,255,' + Math.min(0.9, al) + ')';
+        ctx.strokeStyle = 'rgba(22,22,22,' + Math.min(0.9, al) + ')';
         ctx.lineWidth = 1; ctx.stroke();
       }
       if (highlight[n.id]) {
@@ -422,7 +512,7 @@ body.aside-collapsed aside>*{display:none}
       if (n === selected || n === hovered) {
         var pulse = n === selected ? (1.6 + Math.sin(tsec * 3) * 1.6) : 0;
         ctx.beginPath(); ctx.arc(pp.x, pp.y, Math.max(2, r) + 6 + pulse, 0, Math.PI * 2);
-        ctx.strokeStyle = n === selected ? 'rgba(79,240,255,.95)' : 'rgba(120,190,255,.35)';
+        ctx.strokeStyle = n === selected ? 'rgba(22,22,22,.95)' : 'rgba(120,190,255,.35)';
         ctx.lineWidth = 1; ctx.stroke();
       }
       if (zoom > 1.55 && (n.kind === 'fact' || n.sub === 'diary' || n.kind === 'archive' || (n.kind === 'note' && (n.score || 0) >= 5))) {
@@ -432,13 +522,13 @@ body.aside-collapsed aside>*{display:none}
         ctx.textAlign = 'center';
         var wText = ctx.measureText(label).width + 10;
         var yText = pp.y + Math.max(2, r) + 8;
-        ctx.fillStyle = 'rgba(4,10,20,.92)';
+        ctx.fillStyle = 'rgba(255,255,255,.94)';
         ctx.fillRect(pp.x - wText / 2, yText, wText, 13);
-        ctx.fillStyle = 'rgba(210,238,255,.95)';
+        ctx.fillStyle = 'rgba(22,22,22,.95)';
         ctx.fillText(label, pp.x, yText + 10);
         if (tagTxt && zoom > 2.1) {
           ctx.font = '700 9px Saira, sans-serif';
-          ctx.fillStyle = 'rgba(140,170,210,.95)';
+          ctx.fillStyle = 'rgba(110,110,104,.95)';
           ctx.fillText(tagTxt, pp.x, yText + 22);
         }
       }
@@ -475,6 +565,7 @@ body.aside-collapsed aside>*{display:none}
     }
   }
   setInterval(syncBtnStates, 250);
+
   setTimeout(function () { try { resize(); } catch (e) {} }, 350);
   setTimeout(function () { try { computeFit(); } catch (e) {} }, 900);
   requestAnimationFrame(frame);
@@ -607,14 +698,14 @@ body.aside-collapsed aside>*{display:none}
     c.setTransform(d, 0, 0, d, 0, 0);
     c.clearRect(0, 0, w, h);
 
-    var ACCENT = '#4ff0ff', LINE = 'rgba(79,240,255,.16)', DIM = 'rgba(140,170,210,.75)';
+    var ACCENT = '#161616', LINE = 'rgba(22,22,22,.18)', DIM = 'rgba(110,110,104,.95)';
 
     // 底：极淡渐变 + 横向扫描线
     var bg = c.createLinearGradient(0, 0, 0, h);
-    bg.addColorStop(0, 'rgba(10,18,32,.55)');
-    bg.addColorStop(1, 'rgba(4,9,17,.55)');
+    bg.addColorStop(0, '#FFFFFF');
+    bg.addColorStop(1, '#F4F4F2');
     c.fillStyle = bg; c.fillRect(0, 0, w, h);
-    c.strokeStyle = 'rgba(79,240,255,.05)'; c.lineWidth = 1;
+    c.strokeStyle = 'rgba(22,22,22,.035)'; c.lineWidth = 1;
     for (var sy = 0; sy < h; sy += 6) { c.beginPath(); c.moveTo(0, sy + .5); c.lineTo(w, sy + .5); c.stroke(); }
 
     var axisY = Math.min(h - 38, Math.round(h * 0.56));
@@ -631,14 +722,14 @@ body.aside-collapsed aside>*{display:none}
 
     // 顶部说明
     c.textAlign = 'left';
-    c.fillStyle = 'rgba(140,170,210,.9)';
+    c.fillStyle = 'rgba(110,110,104,.95)';
     c.font = '700 9.5px "Microsoft YaHei", sans-serif';
     c.fillText('每根竖线 = 你说的一句话　｜　越高 = 想起越多条记忆　｜　点光点可回放', left, 13);
 
     var list = waves.slice(-7);
     treeLeaves = [];
     if (!list.length) {
-      c.fillStyle = 'rgba(140,170,210,.8)';
+      c.fillStyle = 'rgba(110,110,104,.9)';
       c.textAlign = 'center';
       c.font = '600 11px "Microsoft YaHei", sans-serif';
       c.fillText('还没有联想记录 —— 聊几句就会长出来', (left + right) / 2, axisY - 26);
@@ -656,7 +747,7 @@ body.aside-collapsed aside>*{display:none}
 
       // 柱（发光竖线）
       c.save();
-      c.strokeStyle = picked ? ACCENT : 'rgba(120,190,255,.55)';
+      c.strokeStyle = picked ? ACCENT : 'rgba(22,22,22,.45)';
       c.lineWidth = picked ? 2.2 : 1.2;
       if (picked) { c.shadowColor = ACCENT; c.shadowBlur = 12; }
       c.beginPath(); c.moveTo(x, axisY); c.lineTo(x, axisY - barH); c.stroke();
@@ -665,7 +756,7 @@ body.aside-collapsed aside>*{display:none}
       // 柱顶节点
       c.beginPath();
       c.arc(x, axisY - barH, picked ? 3.6 : 2.6, 0, Math.PI * 2);
-      c.fillStyle = picked ? ACCENT : 'rgba(180,220,255,.9)';
+      c.fillStyle = picked ? '#FFFA00' : '#161616';
       c.fill();
 
       // 叶子：沿柱两侧分布，代表被想起的记忆
@@ -678,7 +769,7 @@ body.aside-collapsed aside>*{display:none}
         var isLinked = hits[j] && hits[j].linked;
         c.beginPath();
         c.arc(lx, ly, picked ? 2.8 : 2.0, 0, Math.PI * 2);
-        c.fillStyle = picked ? '#ffec78' : (isLinked ? '#8a6bff' : '#5d88b8');
+        c.fillStyle = picked ? '#FFFA00' : (isLinked ? '#5C5A78' : '#9A9A94');
         c.fill();
         treeLeaves.push({ x: lx, y: ly, wave: i, hit: hits[j] });
       }
@@ -701,11 +792,11 @@ body.aside-collapsed aside>*{display:none}
       c.lineTo(chipX + rr, chipY + chipH); c.quadraticCurveTo(chipX, chipY + chipH, chipX, chipY + chipH - rr);
       c.lineTo(chipX, chipY + rr); c.quadraticCurveTo(chipX, chipY, chipX + rr, chipY);
       c.closePath();
-      c.fillStyle = picked ? 'rgba(79,240,255,.18)' : 'rgba(12,22,38,.9)';
+      c.fillStyle = picked ? '#FFFA00' : '#FFFFFF';
       c.fill();
-      c.strokeStyle = picked ? ACCENT : 'rgba(79,240,255,.22)';
+      c.strokeStyle = picked ? '#161616' : 'rgba(22,22,22,.25)';
       c.lineWidth = 1; c.stroke();
-      c.fillStyle = picked ? '#eafcff' : 'rgba(180,205,240,.9)';
+      c.fillStyle = picked ? '#161616' : '#161616';
       c.textAlign = 'center';
       c.fillText(label, chipX + chipW / 2, chipY + 10.5);
     }
@@ -1036,6 +1127,7 @@ body.aside-collapsed aside>*{display:none}
       .then(function (r) { return r.json(); })
       .then(function (d) { moodData = d; paintMoodSide(); drawMoodPage();
         if (location.search.indexOf('moodcheck=1') >= 0) {
+        if (location.search.indexOf('open=mood') >= 0) { setTimeout(openMood, 350); }
           var sd = (d.self && d.self.days) || [], ud = (d.user && d.user.days) || [];
           document.title = 'MOOD self=' + sd.length + ' user=' + ud.length +
             ' v=' + ((d.self || {}).v) + ' label=' + ((d.self || {}).label);
@@ -1073,12 +1165,12 @@ body.aside-collapsed aside>*{display:none}
     var mid = padT + plotH / 2;
 
     // 网格
-    c.strokeStyle = 'rgba(79,240,255,.07)'; c.lineWidth = 1;
+    c.strokeStyle = 'rgba(22,22,22,.07)'; c.lineWidth = 1;
     for (var g = 0; g <= 4; g++) {
       var y = padT + plotH * g / 4;
       c.beginPath(); c.moveTo(padL, y); c.lineTo(W - padR, y); c.stroke();
     }
-    c.strokeStyle = 'rgba(79,240,255,.22)';
+    c.strokeStyle = 'rgba(22,22,22,.28)';
     c.beginPath(); c.moveTo(padL, mid); c.lineTo(W - padR, mid); c.stroke();
 
     c.fillStyle = 'rgba(140,170,210,.85)';
@@ -1089,7 +1181,7 @@ body.aside-collapsed aside>*{display:none}
     c.fillText('-1', padL - 8, padT + plotH + 2);
 
     if (!moodData) {
-      c.fillStyle = 'rgba(140,170,210,.8)'; c.textAlign = 'center';
+      c.fillStyle = 'rgba(110,110,104,.9)'; c.textAlign = 'center';
       c.font = '12px "Microsoft YaHei",sans-serif';
       c.fillText('读取中…', W / 2, mid);
       return;
@@ -1102,7 +1194,7 @@ body.aside-collapsed aside>*{display:none}
     selfDays.concat(userDays).forEach(function (x) { if (!seen[x.d]) { seen[x.d] = 1; days.push(x.d); } });
     days.sort();
     if (!days.length) {
-      c.fillStyle = 'rgba(140,170,210,.8)'; c.textAlign = 'center';
+      c.fillStyle = 'rgba(110,110,104,.9)'; c.textAlign = 'center';
       c.font = '12px "Microsoft YaHei",sans-serif';
       c.fillText(moodError ? '读取失败：面板没有 /api/mood 转发时，请用 8788 打开' : '还没有情绪数据，聊几句就有了', W / 2, mid - 6);
       return;
@@ -1120,15 +1212,15 @@ body.aside-collapsed aside>*{display:none}
       if (sd) {
         var y0 = mid, y1 = yOf(sd.avg);
         var grd = c.createLinearGradient(0, Math.min(y0, y1), 0, Math.max(y0, y1));
-        if (sd.avg >= 0) { grd.addColorStop(0, 'rgba(79,240,255,.95)'); grd.addColorStop(1, 'rgba(79,240,255,.25)'); }
-        else { grd.addColorStop(0, 'rgba(255,120,200,.85)'); grd.addColorStop(1, 'rgba(255,120,200,.22)'); }
+        if (sd.avg >= 0) { grd.addColorStop(0, 'rgba(22,22,22,.95)'); grd.addColorStop(1, 'rgba(22,22,22,.22)'); }
+        else { grd.addColorStop(0, 'rgba(22,22,22,.55)'); grd.addColorStop(1, 'rgba(22,22,22,.15)'); }
         c.fillStyle = grd;
         c.fillRect(x - barW / 2, Math.min(y0, y1), barW, Math.abs(y1 - y0));
-        c.fillStyle = 'rgba(190,240,255,.9)';
+        c.fillStyle = 'rgba(110,110,104,.95)';
         c.font = '9px ui-monospace,monospace'; c.textAlign = 'center';
         c.fillText((sd.avg >= 0 ? '+' : '') + sd.avg.toFixed(2), x, (sd.avg >= 0 ? y1 - 5 : y1 + 11));
       }
-      c.fillStyle = 'rgba(150,180,220,.85)';
+      c.fillStyle = 'rgba(110,110,104,.95)';
       c.font = '11px "Microsoft YaHei",sans-serif';
       c.textAlign = 'center';
       c.fillText(day, x, padT + plotH + 20);
@@ -1144,36 +1236,40 @@ body.aside-collapsed aside>*{display:none}
     if (pts.length) {
       c.beginPath();
       pts.forEach(function (p, i) { if (i === 0) c.moveTo(p.x, p.y); else c.lineTo(p.x, p.y); });
-      c.strokeStyle = 'rgba(178,120,255,.9)'; c.lineWidth = 1.8; c.stroke();
+      c.strokeStyle = 'rgba(22,22,22,.9)'; c.lineWidth = 1.8; c.stroke();
       pts.forEach(function (p) {
         c.beginPath(); c.arc(p.x, p.y, 2.6, 0, Math.PI * 2);
-        c.fillStyle = '#b278ff'; c.fill();
+        c.fillStyle = '#5C5A78'; c.fill();
       });
     }
 
     // 今日逐小时
     var hourly = (moodData.hourly || {}).self || [];
     var hb = 34, hy = H - 30;
-    c.fillStyle = 'rgba(140,170,210,.75)';
+    c.fillStyle = 'rgba(110,110,104,.9)';
     c.font = '9.5px "Microsoft YaHei",sans-serif'; c.textAlign = 'left';
-    c.fillText('今天逐小时（她）', padL, hy - hb - 8);
+    c.textAlign = 'right';
+    c.fillText('今天逐小时（她）', W - padR, hy - hb - 24);
+    c.textAlign = 'left';
     var hw = groupW / 24;
     for (var h = 0; h < 24; h++) {
       var v = hourly[h];
       if (typeof v !== 'number') continue;
       var hx = startX + hw * h + 1;
       var barH = Math.max(2, Math.abs(v) * hb);
-      c.fillStyle = v >= 0 ? 'rgba(79,240,255,.55)' : 'rgba(255,120,200,.5)';
+      c.fillStyle = v >= 0 ? 'rgba(22,22,22,.55)' : 'rgba(22,22,22,.28)';
       c.fillRect(hx, v >= 0 ? hy - barH : hy, Math.max(2, hw - 2), barH);
     }
-    c.strokeStyle = 'rgba(79,240,255,.2)'; c.beginPath(); c.moveTo(padL, hy); c.lineTo(W - padR, hy); c.stroke();
+    c.strokeStyle = 'rgba(22,22,22,.2)'; c.beginPath(); c.moveTo(padL, hy); c.lineTo(W - padR, hy); c.stroke();
   }
 
   (function () {
     var openBtn = document.getElementById('openMood');
-    if (location.search.indexOf('moodcheck=1') >= 0) { setTimeout(openMood, 600); }
+    if (location.search.indexOf('moodcheck=1') >= 0 || location.search.indexOf('open=mood') >= 0) { setTimeout(openMood, 500); }
     var backBtn = document.getElementById('moodBack');
-    if (openBtn) openBtn.addEventListener('click', openMood);
+    if (openBtn) openBtn.addEventListener('click', function () {
+      if (location.port !== '8788') { window.open('http://127.0.0.1:8788/?open=mood', '_blank'); } else { openMood(); }
+    });
     if (backBtn) backBtn.addEventListener('click', closeMood);
     window.addEventListener('resize', function () {
       if (moodPage && moodPage.classList.contains('on')) drawMoodPage();

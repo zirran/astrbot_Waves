@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>记忆实验室 · QQ BOT</title>
+<style>
+:root{--paper:#F4F4F2;--board:#FFFFFF;--ink:#161616;--gray:#6E6E68;--line:#D8D8D2;--accent:#FFFA00}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:radial-gradient(900px 520px at 88% -10%, rgba(22,22,22,.05) 0, rgba(22,22,22,0) 60%),
+             linear-gradient(180deg,#F7F7F5,#F4F4F2 60%,#EFEFEC);
+  color:var(--ink);
+  font:14px/1.7 "Saira","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;
+  min-height:100vh;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px 56px}
+header{display:flex;align-items:flex-end;gap:16px;padding:22px 0 14px;border-bottom:1px solid var(--ink)}
+.eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--gray);font-weight:700}
+h1{margin:2px 0 0;font-size:26px;font-weight:900;letter-spacing:.02em}
+.spacer{flex:1}
+a.back{color:var(--ink);text-decoration:none;border:1px solid var(--ink);padding:8px 14px;font-size:12px;letter-spacing:.08em;clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,0 100%)}
+a.back:hover{background:var(--accent)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--line);background:var(--board)}
+.stats div{padding:16px 18px;border-right:1px solid var(--line)}
+.stats div:last-child{border-right:0}
+.stats .k{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--gray);font-weight:700}
+.stats .v{font:900 30px/1.2 "Saira",ui-monospace,monospace;font-variant-numeric:tabular-nums;letter-spacing:.01em}
+.stats .s{font-size:11px;color:var(--gray)}
+.bar{display:flex;gap:10px;align-items:center;padding:16px 0;flex-wrap:wrap}
+#q{flex:1;min-width:220px;background:var(--board);border:1px solid var(--ink);color:var(--ink);padding:10px 12px;font:13.5px "Microsoft YaHei",sans-serif;outline:none}
+#q::placeholder{color:#9A9A94}
+#q:focus{box-shadow:inset 3px 0 0 var(--accent)}
+.tabs{display:flex;gap:6px}
+.tabs button{background:var(--board);border:1px solid var(--line);color:var(--gray);padding:9px 13px;font:12.5px "Microsoft YaHei",sans-serif;cursor:pointer;clip-path:polygon(0 0,calc(100% - 9px) 0,100% 9px,100% 100%,0 100%)}
+.tabs button:hover{background:#EDEDE8;color:var(--ink)}
+.tabs button.on{background:var(--accent);border-color:var(--ink);color:var(--ink);font-weight:700}
+.list{border-top:1px solid var(--ink)}
+.row{display:grid;grid-template-columns:64px 1fr 232px;gap:18px;padding:16px 0;border-bottom:1px solid var(--line);align-items:start;transition:background .12s linear}
+.row:hover{background:#FAFAF7}
+.idx{font:700 12px/1.9 ui-monospace,Consolas,monospace;color:var(--gray);font-variant-numeric:tabular-nums;padding-top:2px}
+.idx b{display:block;color:var(--ink);font-size:13px}
+.txt{font-size:14.5px;line-height:1.75;word-break:break-word}
+.meta{margin-top:7px;font-size:11.5px;color:var(--gray);letter-spacing:.02em}
+.meta .sep{color:#C4C4BE;margin:0 6px}
+.tag{display:inline-block;border:1px solid var(--line);padding:0 6px;margin:0 4px 4px 0;font-size:11px;color:var(--ink)}
+.badge{display:inline-block;padding:0 7px;margin-right:6px;font-size:11px;font-weight:700}
+.badge.pin{background:var(--accent);color:var(--ink)}
+.badge.park{background:#EDEDE8;color:var(--gray)}
+.badge.void{background:var(--ink);color:#fff}
+.badge.ok{background:#EDEDE8;color:var(--gray)}
+.acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+.acts button{background:var(--board);border:1px solid var(--line);color:var(--ink);padding:6px 10px;font:12px "Microsoft YaHei",sans-serif;cursor:pointer;clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,0 100%)}
+.acts button:hover{background:var(--accent);border-color:var(--ink)}
+.acts button:disabled{background:#F2F2EE;color:#B0B0AA;cursor:default;border-color:var(--line)}
+.acts button.danger{color:#B3261E}
+.acts button.danger:hover{background:var(--ink);color:#fff}
+.empty{padding:56px 0;text-align:center;color:var(--gray);font-size:13.5px}
+@media (max-width:820px){
+  .wrap{padding:0 14px 40px}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .stats div:nth-child(2n){border-right:0}
+  .row{grid-template-columns:44px 1fr;gap:12px}
+  .acts{grid-column:2;justify-content:flex-start;margin-top:4px}
+  h1{font-size:22px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div>
+    <div class="eyebrow">// MEMORY LAB</div>
+    <h1>记忆实验室</h1>
+  </div>
+  <div class="spacer"></div>
+  <a class="back" id="backLink" href="/">返回星图</a>
+</header>
+
+<section class="stats">
+  <div><div class="k">近 7 天请求</div><div class="v" id="sReq">—</div><div class="s" id="sReqS">读取中</div></div>
+  <div><div class="k">缓存命中</div><div class="v" id="sHit">—</div><div class="s" id="sHitS">—</div></div>
+  <div><div class="k">输入 token</div><div class="v" id="sTok">—</div><div class="s" id="sTokS">—</div></div>
+  <div><div class="k">合计费用</div><div class="v" id="sCost">—</div><div class="s" id="sCostS">按插件单价估算</div></div>
+</section>
+
+<div class="bar">
+  <input id="q" placeholder="搜内容或标签，回车检索" autocomplete="off">
+  <div class="tabs" id="tabs">
+    <button data-layer="all" class="on">全部</button>
+    <button data-layer="l3">长期 L3</button>
+    <button data-layer="l2">近期 L2</button>
+    <button data-layer="archive">存档 L4</button>
+  </div>
+</div>
+
+<div class="list" id="list"></div>
+<div class="empty" id="empty" style="display:none">这里会列出匹配的记忆；换个关键词或切换分层再看看。</div>
+
+</div>
+
+<script>
+(function () {
+  var qEl = document.getElementById('q');
+  var listEl = document.getElementById('list');
+  var emptyEl = document.getElementById('empty');
+  var layer = 'all';
+  var token = (function () {
+    var m = /[?&]token=([^&]+)/.exec(location.search);
+    return m ? decodeURIComponent(m[1]) : '';
+  })();
+  var back = document.getElementById('backLink');
+  if (back) back.href = '/' + (token ? ('?token=' + encodeURIComponent(token)) : '');
+
+  function withToken(path) {
+    if (!token) return path;
+    return path + (path.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(token);
+  }
+
+  function num(n) {
+    if (n == null) return '—';
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+    if (n >= 1e4) return (n / 1e4).toFixed(1) + '万';
+    return String(n);
+  }
+
+  function loadUsage() {
+    fetch(withToken('/api/usage?days=7'), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var t = d.totals || {};
+        document.getElementById('sReq').textContent = num(t.n || 0);
+        document.getElementById('sReqS').textContent = ((d.days && d.days.length) || 0) + ' 天有记录';
+        document.getElementById('sHit').textContent = (t.hit != null) ? Math.round(t.hit * 100) + '%' : '—';
+        document.getElementById('sHitS').textContent = '省下 ' + num(t.cached || 0) + ' token';
+        document.getElementById('sTok').textContent = num((t.cached || 0) + (t.input || 0));
+        document.getElementById('sTokS').textContent = '缓存 ' + num(t.cached || 0) + ' / 未命中 ' + num(t.input || 0);
+        document.getElementById('sCost').textContent = (t.cost != null) ? ('¥' + t.cost.toFixed(2)) : '—';
+      })
+      .catch(function () {
+        document.getElementById('sReqS').textContent = '读取失败，检查面板或隧道';
+      });
+  }
+
+  function el(tag, cls, txt) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (txt != null) e.textContent = txt;
+    return e;
+  }
+
+  function load() {
+    var p = '/api/mem?q=' + encodeURIComponent(qEl.value.trim()) + '&layer=' + layer + '&limit=60';
+    fetch(withToken(p), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(render)
+      .catch(function () {
+        listEl.innerHTML = '';
+        emptyEl.style.display = 'block';
+        emptyEl.textContent = '读取失败：面板或隧道没连上，改用插件地址 8788 试试。';
+      });
+  }
+
+  function render(d) {
+    listEl.innerHTML = '';
+    var facts = d.facts || [], notes = d.notes || [], arch = d.archive || [];
+    var total = facts.length + notes.length + arch.length;
+    emptyEl.style.display = total ? 'none' : 'block';
+    var i = 0;
+    facts.forEach(function (f) { listEl.appendChild(row(f, 'fact', ++i)); });
+    notes.forEach(function (n) { listEl.appendChild(row(n, 'note', ++i)); });
+    arch.forEach(function (a) { listEl.appendChild(row(a, 'archive', ++i)); });
+  }
+
+  function row(item, kind, idx) {
+    var box = el('div', 'row');
+    var no = el('div', 'idx');
+    no.appendChild(el('b', null, 'No.' + String(idx).padStart(3, '0')));
+    box.appendChild(no);
+
+    var mid = el('div');
+    mid.appendChild(el('div', 'txt', item.text || ''));
+
+    var meta = el('div', 'meta');
+    if (kind === 'fact') {
+      if (item.pinned) meta.appendChild(el('span', 'badge pin', '置顶'));
+      if (item.parked) meta.appendChild(el('span', 'badge park', '已下沉'));
+      if (item.conf === 0) meta.appendChild(el('span', 'badge void', '已作废'));
+      meta.appendChild(document.createTextNode('想起 ' + (item.hits || 0) + ' 次'));
+      if (item.conf != null) {
+        meta.appendChild(el('span', 'sep', '│'));
+        meta.appendChild(document.createTextNode('可信度 ' + item.conf));
+      }
+    } else if (kind === 'note') {
+      meta.appendChild(el('span', 'badge ' + (item.expired ? 'park' : 'ok'), item.expired ? '已过期' : '有效'));
+      meta.appendChild(document.createTextNode('强度 ' + (item.score != null ? item.score : '-')));
+    } else {
+      meta.appendChild(document.createTextNode(item.role === 'user' ? '你' : '她'));
+      if (item.ts) {
+        meta.appendChild(el('span', 'sep', '│'));
+        meta.appendChild(document.createTextNode(new Date(item.ts * 1000).toLocaleString()));
+      }
+    }
+    (item.tags || []).forEach(function (t) {
+      meta.appendChild(el('span', 'tag', '#' + t));
+    });
+    mid.appendChild(meta);
+    box.appendChild(mid);
+
+    var acts = el('div', 'acts');
+    if (kind === 'fact') {
+      var pin = el('button', null, item.pinned ? '取消置顶' : '置顶');
+      pin.onclick = function () { act(item.id, item.pinned ? 'unpin' : 'pin'); };
+      var park = el('button', null, item.parked ? '已下沉' : '下沉');
+      park.disabled = !!item.parked;
+      park.onclick = function () { act(item.id, 'park'); };
+      var del = el('button', 'danger', '作废');
+      del.onclick = function () { act(item.id, 'void'); };
+      acts.appendChild(pin); acts.appendChild(park); acts.appendChild(del);
+    } else if (kind === 'note') {
+      var drop = el('button', 'danger', '删除这条');
+      drop.onclick = function () { act(item.id, 'drop'); };
+      acts.appendChild(drop);
+    }
+    box.appendChild(acts);
+    return box;
+  }
+
+  function act(id, op) {
+    fetch(withToken('/api/mem'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id, op: op })
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (d && d.ok) { load(); }
+      else { alert('操作失败：' + ((d && d.error) || '未知错误')); }
+    }).catch(function (e) { alert('操作失败：' + e.message); });
+  }
+
+  qEl.addEventListener('keydown', function (e) { if (e.key === 'Enter') load(); });
+  Array.prototype.forEach.call(document.querySelectorAll('#tabs button'), function (b) {
+    b.addEventListener('click', function () {
+      Array.prototype.forEach.call(document.querySelectorAll('#tabs button'), function (x) { x.classList.remove('on'); });
+      b.classList.add('on');
+      layer = b.getAttribute('data-layer');
+      load();
+    });
+  });
+
+  loadUsage();
+  load();
+})();
+</script>
+</body>
+</html>
