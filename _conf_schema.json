@@ -6,12 +6,12 @@
   },
   "owner_id": {
     "type": "string",
-    "description": "主人 QQ 号（只对这个人的私聊做记忆）",
+    "description": "主人 QQ 号（可填多个，逗号分隔）。只有这些人的私聊会写入记忆。",
     "default": "325325325325"
   },
   "persona_id": {
     "type": "string",
-    "description": "长期记忆与日记写入的人格名（必填；留空则不写人格，只存磁盘）",
+    "description": "长期记忆与日记写进哪个人格；留空则只存磁盘、不改人格。",
     "default": "",
     "hint": "填你 AstrBot 里已有的人格名，例如『大肥鱼』。留空则记忆不会写进人格，只能靠检索注入。"
   },
@@ -22,12 +22,12 @@
   },
   "cheap_provider_id": {
     "type": "string",
-    "description": "总结/打标签用的便宜模型",
+    "description": "打标签 / 压缩 / 日记用的便宜模型；留空则用默认模型。",
     "default": "deepseek/deepseek-flash"
   },
   "embedding_provider_id": {
     "type": "string",
-    "description": "向量模型（用于语义联想）",
+    "description": "向量模型；不配就没有语义联想与向量近邻。",
     "default": "bailian_embedding"
   },
   "embed_min_sim": {
@@ -42,7 +42,7 @@
   },
   "l1_window": {
     "type": "int",
-    "description": "L1 保留最近多少句",
+    "description": "L1 保留多少句原话（建议 20）。",
     "default": 10
   },
   "l2_ttl_hours": {
@@ -62,7 +62,7 @@
   },
   "recall_inject_max": {
     "type": "int",
-    "description": "注入记忆条数上限",
+    "description": "单次最多注入几条记忆（2–6，默认 4）。",
     "default": 8
   },
   "assoc_expand": {
@@ -137,7 +137,7 @@
   },
   "diary_interval_days": {
     "type": "int",
-    "description": "每隔多少天写一篇日记",
+    "description": "多少天写一篇日记（默认 14）。",
     "default": 14
   },
   "diary_persona_entries": {
@@ -152,7 +152,7 @@
   },
   "web_port": {
     "type": "int",
-    "description": "记忆星图页面端口",
+    "description": "星图 / 情绪 / 实验室页面端口（默认 8788）。",
     "default": 8788
   },
   "tag_max": {
@@ -162,12 +162,12 @@
   },
   "relationship_start": {
     "type": "string",
-    "description": "认识的第一天（YYYY-MM-DD），用于注入『认识第 N 天』",
+    "description": "认识的第一天，格式 2026-01-01；填了会在注入里带「第 N 天」。",
     "default": ""
   },
   "fact_capacity": {
     "type": "int",
-    "description": "长期事实超过多少条开始批量归档",
+    "description": "活跃长期记忆超过多少条开始归档（默认 120）。",
     "default": 120
   },
   "fact_archive_batch": {
@@ -182,42 +182,42 @@
   },
   "diary_digest_every": {
     "type": "int",
-    "description": "多少篇日记合成年度合集",
+    "description": "多少篇日记合成年度合集（默认 24）。",
     "default": 24
   },
   "emotion_sticker": {
     "type": "string",
-    "description": "表情包：auto（检测外部插件）/ on / off",
+    "description": "表情包策略：auto（检测到 meme_manager 就不启用内置）、on、off。",
     "default": "auto"
   },
   "group_max_per_hour": {
     "type": "int",
-    "description": "群聊每小时最多回几条，超了直接不回",
+    "description": "群聊每小时最多回几条，超过直接不回（省 token）。",
     "default": 6
   },
   "group_min_gap_seconds": {
     "type": "int",
-    "description": "群聊两条回复的最小间隔（秒）",
+    "description": "群聊两条回复的最小间隔（秒）。",
     "default": 8
   },
   "platform_allow": {
     "type": "string",
-    "description": "允许做记忆的平台（逗号分隔）",
+    "description": "允许做记忆的平台标识，逗号分隔（snowluma / qq_official）。",
     "default": "snowluma,qq_official"
   },
   "private_markers": {
     "type": "string",
-    "description": "私聊会话的标记片段",
+    "description": "私聊会话的标识片段，逗号分隔。",
     "default": "FriendMessage,private"
   },
   "recall_score_floor": {
     "type": "float",
-    "description": "注入分数门槛（自适应 0.8–1.5）",
+    "description": "注入分数门槛（0.8–1.5 自适应，默认 1.2）。",
     "default": 1.2
   },
   "recall_inject_chars": {
     "type": "int",
-    "description": "单次注入字符预算（调优器 140–420）",
+    "description": "单次注入的字符预算（140–420，默认 240）。",
     "default": 240
   },
   "self_review_days": {
@@ -227,7 +227,7 @@
   },
   "split_paragraphs": {
     "type": "bool",
-    "description": "回复里的空行是否拆成多条消息",
+    "description": "回复里有空行时，是否拆成多条消息发（更像真人）。",
     "default": true
   },
   "tag_semantic_min": {
@@ -237,7 +237,7 @@
   },
   "web_host": {
     "type": "string",
-    "description": "星图监听地址（容器内需 0.0.0.0，宿主机已只绑 127.0.0.1）",
+    "description": "页面监听地址：容器内需 0.0.0.0，宿主机已只绑 127.0.0.1。",
     "default": "0.0.0.0"
   },
   "web_token": {
@@ -247,17 +247,27 @@
   },
   "price_cached_per_m": {
     "type": "float",
-    "description": "缓存命中输入单价（元/百万 token）",
+    "description": "缓存命中的输入单价（元 / 百万 token）。",
     "default": 0.02
   },
   "price_input_per_m": {
     "type": "float",
-    "description": "未命中输入单价（元/百万 token）",
+    "description": "未命中输入的单价（元 / 百万 token）。",
     "default": 1.0
   },
   "price_output_per_m": {
     "type": "float",
-    "description": "输出单价（元/百万 token）",
+    "description": "输出的单价（元 / 百万 token）。",
     "default": 4.0
+  },
+  "language": {
+    "type": "string",
+    "description": "界面语言 / UI language：auto（跟随系统，默认中文）、zh-CN、en-US",
+    "default": "auto"
+  },
+  "daily_budget_yuan": {
+    "type": "float",
+    "description": "每日预算（元）：超过后自动收紧注入并要求短回复；0 = 不限制",
+    "default": 0
   }
 }

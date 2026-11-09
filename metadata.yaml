@@ -1,7 +1,7 @@
 name: astrbot_plugin_waves
 display_name: 海浪
-desc: 记忆与情感的一体化插件：L1–L4 四层记忆、双轨情感、真实遗忘、带大纲的日记，以及可交互的记忆星图与情绪页。
-version: 2.1.1
+desc: 记忆与情感的一体化插件：四层记忆、双轨情感、标签联想与两跳推理、真实遗忘、日记、星图与记忆实验室，支持多语言与日预算。
+version: 2.3.0
 author: zirranya
 repo: "https://github.com/zirran/astrbot_Waves"
 astrbot_version: ">=4.17.0"

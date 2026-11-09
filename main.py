@@ -39,6 +39,56 @@ REMEMBER_HINTS = ("记住", "别忘", "记一下", "要记得", "记牢", "答�
 STOP = set("的了吗呢吧啊呀哦嗯是在和与就都也还又很太把被给让这那一个我你他她它们")
 
 
+LANG_TABLE = {
+    "zh-CN": {
+        "mem_merged": "长期记忆 {total} 条，合并掉 {merged} 条重复。",
+        "mem_trimmed": "保留权重最高的 {keep} 条，下沉 {cut} 条。",
+        "mem_trim_none": "活跃记忆已经不超过 {keep} 条。",
+        "mem_search_hint": "要给个关键词呀，比如 /记忆 搜 名字",
+        "mem_search_empty": "存档里没找到「{keyword}」。",
+        "mem_search_found": "找到这些：",
+        "mem_link_empty": "这条线索没想到什么。",
+        "mem_facts_empty": "长期记忆还是空的。",
+        "mem_facts_head": "我记得这些（已写进人格）：",
+        "mem_organizing": "我把记忆理一理…",
+        "mem_organized": "整理完了：",
+        "mood_empty": "这几天没攒到情绪记录。",
+        "mood_user_head": "你这边（近 7 天）：",
+        "mood_self_head": "我这边（近 5 天）：",
+        "mood_tone": "底色：{label} · {avg}（{n} 条）",
+        "diary_merging": "我把旧日记收一收…",
+        "diary_count": "现在共 {n} 篇。",
+        "diary_empty": "日记本还是空的。",
+        "diary_writing": "好，我翻翻最近的记录…",
+        "budget_line": "【预算】今天已经花了约 {cost} 元，超过 {cap} 元上限：回复尽量短，别用工具。",
+        "budget_log": "[Wave] 今日花费 {cost} 元，超过预算 {cap} 元，已收紧注入与回复",
+    },
+    "en-US": {
+        "mem_merged": "{total} long-term memories, merged {merged} duplicates.",
+        "mem_trimmed": "Kept top {keep} by weight, parked {cut}.",
+        "mem_trim_none": "Active memories already <= {keep}.",
+        "mem_search_hint": "Give me a keyword, e.g. /memory search name",
+        "mem_search_empty": "Nothing found for \"{keyword}\" in the archive.",
+        "mem_search_found": "Found these:",
+        "mem_link_empty": "That clue didn't lead anywhere.",
+        "mem_facts_empty": "Long-term memory is still empty.",
+        "mem_facts_head": "What I remember (already in persona):",
+        "mem_organizing": "Let me tidy my memories...",
+        "mem_organized": "Done:",
+        "mood_empty": "No mood records yet these days.",
+        "mood_user_head": "Yours (last 7 days):",
+        "mood_self_head": "Mine (last 5 days):",
+        "mood_tone": "Baseline: {label} · {avg} ({n} records)",
+        "diary_merging": "Consolidating older diary entries...",
+        "diary_count": "{n} entries now.",
+        "diary_empty": "The diary is still empty.",
+        "diary_writing": "Let me look back a bit...",
+        "budget_line": "[Budget] About {cost} CNY spent today, over the {cap} CNY cap: keep replies short and skip tools.",
+        "budget_log": "[Wave] today cost {cost} CNY > budget {cap}, tightened injection and replies",
+    },
+}
+
+
 SELF_MOOD_LABELS = (
     (-1.01, "很低落"), (-0.55, "有点沉"), (-0.2, "略闷"),
     (0.2, "平静"), (0.55, "还不错"), (1.01, "挺开心"),
@@ -49,11 +99,17 @@ MUTE_OFF = ("可以聊天了", "聊吧", "说话吧", "可以说了", "不生气
 MD_BULLET = re.compile(r"^\s*(?:[-*+]\s+|\d+\.\s+|>\s?)", re.M)
 
 
+_MD_CACHE: dict = {}
+
+
 def plain_md(text: str) -> str:
     """把 markdown 洗成纯文本：QQ 不认这些符号，留着很丑。"""
     t = str(text or "")
     if not t:
         return t
+    cached = _MD_CACHE.get(t)
+    if cached is not None:
+        return cached
     t = re.sub(r"```[a-zA-Z]*\n?", "", t)
     t = t.replace("```", "")
     t = re.sub(r"`([^`]*)`", r"\1", t)
@@ -67,7 +123,11 @@ def plain_md(text: str) -> str:
     t = re.sub(r"^\s*[-*_]{3,}\s*$", "", t, flags=re.M)
     t = t.replace("|", " ").replace("→", "→")
     t = re.sub(r"\n{3,}", "\n\n", t)
-    return t.strip()
+    out = t.strip()
+    if len(_MD_CACHE) > 300:
+        _MD_CACHE.clear()
+    _MD_CACHE[t] = out
+    return out
 
 def split_sections(prompt: str, titles: list[str]) -> tuple[str, dict[str, str]]:
     base = prompt
@@ -1221,7 +1281,7 @@ class MemoryLayersPlugin(Star):
             if not isinstance(messages, list):
                 continue
             for item in messages:
-                role, text = self._parse_message(item)
+                role, text = self._parse(item)
                 if not text:
                     continue
                 who = "主人" if role == "user" else "我"
@@ -1782,6 +1842,23 @@ class MemoryLayersPlugin(Star):
     def _emotion_analysis(self, text: str) -> dict:
         """增强版：转折取后句、假设降权、反问降置信、QQ 表情码剥离、强度分级。"""
         t = str(text or "")
+        try:
+            cache = getattr(self, "_emo_cache", None)
+            if cache is None:
+                cache = self._emo_cache = {}
+            hit = cache.get(t)
+            if hit is not None:
+                return dict(hit)
+            res = self._emotion_analyze_uncached(t)
+            if len(cache) > 400:
+                cache.clear()
+            cache[t] = dict(res)
+            return res
+        except Exception:
+            return self._emotion_analyze_uncached(t)
+
+    def _emotion_analyze_uncached(self, t: str) -> dict:
+        t = str(t or "")
         if not t:
             return {"v": 0.0, "label": "", "pos": 0, "neg": 0, "n": 0,
                     "neutral": True, "reported": False, "intensity": 0.0,
@@ -2587,6 +2664,31 @@ class MemoryLayersPlugin(Star):
             return out
         return out
 
+    def _lang(self) -> str:
+        raw = str(self.cfg("language", "auto") or "auto").lower()
+        if raw in ("en", "en-us", "english"):
+            return "en-US"
+        return "zh-CN"
+
+    def _t(self, key: str, **kw) -> str:
+        try:
+            table = LANG_TABLE.get(self._lang()) or LANG_TABLE["zh-CN"]
+            tpl = table.get(key) or LANG_TABLE["zh-CN"].get(key) or key
+            return tpl.format(**kw) if kw else tpl
+        except Exception:
+            return key
+
+    def _today_cost(self) -> float:
+        try:
+            cached = getattr(self, "_cost_cache", None)
+            if cached and (time.time() - cached[0]) < 120:
+                return cached[1]
+            cost = float((self._usage_json(1).get("totals") or {}).get("cost") or 0.0)
+            self._cost_cache = (time.time(), cost)
+            return cost
+        except Exception:
+            return 0.0
+
     def _cache_stats(self, since: float = 0) -> dict:
         """从 AstrBot 的 provider_stats 里读最近 20 次请求的缓存命中情况。"""
         try:
@@ -3065,6 +3167,18 @@ class MemoryLayersPlugin(Star):
                     _when = self._short_when(hit.get("ts"))
                     _wtxt = "" if (not _when or _when == "今天") else (_when + " ")
                     lines.append(f"{mark}[{prefix}]{tag}{_wtxt}{_txt[:50]}")
+                try:
+                    _cap_budget = float(self.cfg("daily_budget_yuan", 0) or 0)
+                    if _cap_budget > 0:
+                        _cost = self._today_cost()
+                        if _cost >= _cap_budget:
+                            block += self._t("budget_line", cost=round(_cost, 2), cap=_cap_budget) + "\n"
+                            _today = datetime.now().strftime("%Y-%m-%d")
+                            if str(self.state.get("budget_alert_day") or "") != _today:
+                                self.state["budget_alert_day"] = _today
+                                logger.info(self._t("budget_log", cost=round(_cost, 2), cap=_cap_budget))
+                except Exception:
+                    pass
                 _plan = self._cache_plan()
                 _cap = max(2, min(6, int(_plan.get("max", 4))))
                 if len(lines) > 1 and float(hits[0].get("score") or 0) >= 3.0:
@@ -3960,7 +4074,7 @@ class MemoryLayersPlugin(Star):
 
         if action in ("去重", "dedupe"):
             total, merged = await asyncio.to_thread(self.dedupe_facts_sync)
-            yield event.plain_result(f"长期记忆 {total} 条，合并掉 {merged} 条重复。")
+            yield event.plain_result(self._t("mem_merged", total=total, merged=merged))
             return
 
         if action.startswith("裁剪"):
@@ -3970,31 +4084,31 @@ class MemoryLayersPlugin(Star):
             except Exception:
                 keep = 60
             cut = await asyncio.to_thread(self.trim_facts_sync, keep)
-            yield event.plain_result(f"保留权重最高的 {keep} 条，下沉 {cut} 条。" if cut else f"活跃记忆已经不超过 {keep} 条。")
+            yield event.plain_result(self._t("mem_trimmed", keep=keep, cut=cut) if cut else self._t("mem_trim_none", keep=keep))
             return
 
         if action.startswith("搜"):
             keyword = action[1:].strip()
             if not keyword:
-                yield event.plain_result("要给个关键词呀，比如 /记忆 搜 名字")
+                yield event.plain_result(self._t("mem_search_hint"))
                 return
             hits = await asyncio.to_thread(self.search_sync, keyword, 5)
             if not hits:
-                yield event.plain_result(f"存档里没找到「{keyword}」。")
+                yield event.plain_result(self._t("mem_search_empty", keyword=keyword))
                 return
             lines = []
             for rec in hits:
                 who = "主人" if rec.get("role") == "user" else "我"
                 stamp = datetime.fromtimestamp(rec.get("ts", 0)).strftime("%m-%d %H:%M")
                 lines.append(f"[{stamp}] {who}: {rec.get('text', '')[:120]}")
-            yield event.plain_result("找到这些：\n" + "\n".join(lines))
+            yield event.plain_result(self._t("mem_search_found") + "\n" + "\n".join(lines))
             return
 
         if action.startswith("联想"):
             query = action[2:].strip() or "主人"
             hits = await self.retrieve_async(query, k=6)
             if not hits:
-                yield event.plain_result("这条线索没想到什么。")
+                yield event.plain_result(self._t("mem_link_empty"))
                 return
             lines = [f"{'↳' if h['linked'] else '·'}[{h['kind']}] {h['text'][:60]}" for h in hits]
             chain = self.reason_chain(hits)
@@ -4005,17 +4119,17 @@ class MemoryLayersPlugin(Star):
 
         if action in ("事实", "长期"):
             if not self.l3:
-                yield event.plain_result("长期记忆还是空的。")
+                yield event.plain_result(self._t("mem_facts_empty"))
                 return
             lines = [f"· #{'/'.join(f.get('tags') or []) or '无'} {f['text']}" for f in sorted(self.l3, key=lambda x: x.get("last_seen", 0))]
-            yield event.plain_result("我记得这些（已写进人格）：\n" + "\n".join(lines[-30:]))
+            yield event.plain_result(self._t("mem_facts_head") + "\n" + "\n".join(lines[-30:]))
             return
 
         if action in ("整理", "压缩"):
             if not event.is_admin():
                 return
-            yield event.plain_result("我把记忆理一理…")
-            yield event.plain_result("整理完了：" + await self.organize_facts())
+            yield event.plain_result(self._t("mem_organizing"))
+            yield event.plain_result(self._t("mem_organized") + await self.organize_facts())
             return
 
         now = time.time()
@@ -4202,7 +4316,7 @@ class MemoryLayersPlugin(Star):
             day = datetime.fromtimestamp(ts).strftime("%m-%d")
             buckets.setdefault(day, []).append(float(v))
         if not buckets:
-            yield event.plain_result("这几天没攒到情绪记录。")
+            yield event.plain_result(self._t("mood_empty"))
             return
         bars = "▁▂▃▄▅▆▇█"
         days = sorted(buckets)[-7:]
@@ -4280,20 +4394,20 @@ class MemoryLayersPlugin(Star):
         if action in ("合并", "digest"):
             if not event.is_admin():
                 return
-            yield event.plain_result("我把旧日记收一收…")
+            yield event.plain_result(self._t("diary_merging"))
             await self._consolidate_diary()
-            yield event.plain_result(f"现在共 {len(self.diary_entries)} 篇。")
+            yield event.plain_result(self._t("diary_count", n=len(self.diary_entries)))
             return
         if action in ("现在", "写"):
             if not event.is_admin():
                 return
-            yield event.plain_result("好，我翻翻最近的记录…")
+            yield event.plain_result(self._t("diary_writing"))
             yield event.plain_result(await self.write_diary(force=True))
             return
         if not self.diary_entries:
             self._load_diary()
         if not self.diary_entries:
-            yield event.plain_result("日记本还是空的。")
+            yield event.plain_result(self._t("diary_empty"))
             return
         entry = self.diary_entries[-1]
         if action in ("大纲", "outline"):
